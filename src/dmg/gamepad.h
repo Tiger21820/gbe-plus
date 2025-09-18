@@ -35,6 +35,8 @@ class DMG_GamePad : virtual public dmg_core_pad
 	void process_gyroscope();
 	void process_gyroscope(float x, float y);
 	void process_turbo_buttons();
+	void process_vaus();
+	void process_workboy_keys(int pad, bool pressed);
 	void start_rumble();
 	void stop_rumble();
 	u8 read();
@@ -55,6 +57,8 @@ class DMG_GamePad : virtual public dmg_core_pad
 	u32 ddr_key_mapping[3];
 	u32 ddr_joy_mapping[3];
 	bool ddr_was_mapped;
+
+	u32 axis_magnitude;
 };
 
 #endif // GB_GAMEPAD 

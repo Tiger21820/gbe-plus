@@ -114,6 +114,7 @@ void AGB_APU::reset()
 		apu_stat.dma[x].counter = 0;
 		apu_stat.dma[x].length = 0;
 		apu_stat.dma[x].timer = 0;
+		apu_stat.dma[x].channel = 0;
 		apu_stat.dma[x].master_volume = config::volume;
 
 		apu_stat.dma[x].playing = false;
@@ -171,7 +172,7 @@ bool AGB_APU::init()
 	//Setup the desired audio specifications
     	desired_spec.freq = apu_stat.sample_rate;
 	desired_spec.format = AUDIO_S16SYS;
-    	desired_spec.channels = 1;
+	desired_spec.channels = (config::use_stereo) ? 2 : 1;
     	desired_spec.samples = (config::sample_size) ? config::sample_size : 4096;
     	desired_spec.callback = agb_audio_callback;
     	desired_spec.userdata = this;
@@ -638,6 +639,9 @@ void agb_audio_callback(void* _apu, u8 *_stream, int _length)
 	s16* stream = (s16*) _stream;
 	int length = _length/2;
 
+	//Set correct length for stereo
+	if(config::use_stereo) { length /= 2; }
+
 	std::vector<s16> channel_1_stream(length);
 	std::vector<s16> channel_2_stream(length);
 	std::vector<s16> channel_3_stream(length);
@@ -666,16 +670,54 @@ void agb_audio_callback(void* _apu, u8 *_stream, int _length)
 	//Custom software mixing
 	for(u32 x = 0; x < length; x++)
 	{
-		//Add Sound Channels 1-4 and multiply by volume ratio
-		s32 out_sample = (channel_1_stream[x] + channel_2_stream[x] + channel_3_stream[x] + channel_4_stream[x]) * channel_ratio;
+		//Mono audio
+		if(!config::use_stereo)
+		{
+			//Add Sound Channels 1-4 and multiply by volume ratio
+			s32 out_sample = (channel_1_stream[x] + channel_2_stream[x] + channel_3_stream[x] + channel_4_stream[x]) * channel_ratio;
 
-		//Add DMA Channels A and B and multiply by volume ratio
-		out_sample += (dma_a_stream[x] * dma_a_ratio) + (dma_b_stream[x] * dma_b_ratio);
+			//Add DMA Channels A and B and multiply by volume ratio
+			out_sample += (dma_a_stream[x] * dma_a_ratio) + (dma_b_stream[x] * dma_b_ratio);
 
-		//Divide final wave by total amount of channels
-		out_sample /= 6;
+			//Divide final wave by total amount of channels
+			out_sample /= 6;
 
-		stream[x] = out_sample;
+			stream[x] = out_sample;
+		}
+
+		//Stereo audio
+		else
+		{
+			u32 index = (x * 2);
+
+			//Left sample
+			s32 ch1 = apu_link->apu_stat.channel[0].left_enable ? channel_1_stream[x] : -32768;
+			s32 ch2 = apu_link->apu_stat.channel[1].left_enable ? channel_2_stream[x] : -32768;
+			s32 ch3 = apu_link->apu_stat.channel[2].left_enable ? channel_3_stream[x] : -32768;
+			s32 ch4 = apu_link->apu_stat.channel[3].left_enable ? channel_4_stream[x] : -32768;
+			s32 ch5 = apu_link->apu_stat.dma[0].left_enable ? dma_a_stream[x] : -32768;
+			s32 ch6 = apu_link->apu_stat.dma[1].left_enable ? dma_b_stream[x] : -32768;
+
+			s32 out_sample = (ch1 + ch2 + ch3 + ch4) * channel_ratio * apu_link->apu_stat.channel_left_volume;
+			out_sample += (ch5 * dma_a_ratio) + (ch6 * dma_b_ratio);
+			out_sample /= 6;
+
+			stream[index] = out_sample;
+
+			//Right sample
+			ch1 = apu_link->apu_stat.channel[0].right_enable ? channel_1_stream[x] : -32768;
+			ch2 = apu_link->apu_stat.channel[1].right_enable ? channel_2_stream[x] : -32768;
+			ch3 = apu_link->apu_stat.channel[2].right_enable ? channel_3_stream[x] : -32768;
+			ch4 = apu_link->apu_stat.channel[3].right_enable ? channel_4_stream[x] : -32768;
+			ch5 = apu_link->apu_stat.dma[0].right_enable ? dma_a_stream[x] : -32768;
+			ch6 = apu_link->apu_stat.dma[1].right_enable ? dma_b_stream[x] : -32768;
+
+			out_sample = (ch1 + ch2 + ch3 + ch4) * channel_ratio * apu_link->apu_stat.channel_right_volume;
+			out_sample += (ch5 * dma_a_ratio) + (ch6 * dma_b_ratio);
+			out_sample /= 6;
+
+			stream[index + 1] = out_sample;
+		}
 	}
 
 	//Mix in external audio if necessary
@@ -696,12 +738,27 @@ void agb_audio_callback(void* _apu, u8 *_stream, int _length)
 		//Custom software mixing
 		for(u32 x = 0; x < length; x++)
 		{
-			s32 out_sample = stream[x] + (ext_stream[x] * ext_ratio * emu_volume);
+			//Mono audio
+			if(!config::use_stereo)
+			{	
+				s32 out_sample = stream[x] + (ext_stream[x] * ext_ratio * emu_volume);
 			
-			//Divide final wave by total amount of channels
-			out_sample /= 2;
+				//Divide final wave by total amount of channels
+				out_sample /= 2;
 
-			stream[x] = out_sample;
+				stream[x] = out_sample;
+			}
+
+			//Stereo audio - Mono for the time being, duplicated over L/R channels
+			else
+			{
+				s32 out_sample = stream[x] + (ext_stream[x >> 1] * ext_ratio * emu_volume);
+			
+				//Divide final wave by total amount of channels
+				out_sample /= 2;
+
+				stream[x] = out_sample;
+			}
 		}
 	}
 }
@@ -999,7 +1056,7 @@ void AGB_APU::buffer_channel_1()
 				&& (apu_stat.channel[0].frequency_distance < (frequency_samples/8) * apu_stat.channel[0].duty_cycle_end)
 				&& (apu_stat.channel[0].volume != 0))
 				{
-					apu_stat.channel[0].buffer[apu_stat.channel[0].current_index++] = -32768 + (apu_stat.channel_right_volume * apu_stat.channel[0].volume);
+					apu_stat.channel[0].buffer[apu_stat.channel[0].current_index++] = -32768 + (4369 * apu_stat.channel[0].volume);
 				}
 
 				//Generate low wave form if duty cycle is off OR volume is muted
@@ -1069,7 +1126,7 @@ void AGB_APU::buffer_channel_2()
 				&& (apu_stat.channel[1].frequency_distance < (frequency_samples/8) * apu_stat.channel[1].duty_cycle_end)
 				&& (apu_stat.channel[1].volume != 0))
 				{
-					apu_stat.channel[1].buffer[apu_stat.channel[1].current_index++] = -32768 + (apu_stat.channel_right_volume * apu_stat.channel[1].volume);
+					apu_stat.channel[1].buffer[apu_stat.channel[1].current_index++] = -32768 + (4369 * apu_stat.channel[1].volume);
 				}
 
 				//Generate low wave form if duty cycle is off OR volume is muted
@@ -1156,19 +1213,19 @@ void AGB_APU::buffer_channel_3()
 							break;
 
 						case 0x1:
-							apu_stat.channel[2].buffer[apu_stat.channel[2].current_index++] = -32768 + (apu_stat.channel_right_volume * apu_stat.waveram_sample);
+							apu_stat.channel[2].buffer[apu_stat.channel[2].current_index++] = -32768 + (4369 * apu_stat.waveram_sample);
 							break;
 
 						case 0x2:
-							apu_stat.channel[2].buffer[apu_stat.channel[2].current_index++] = (-32768 + (apu_stat.channel_right_volume * apu_stat.waveram_sample)) * 0.5;
+							apu_stat.channel[2].buffer[apu_stat.channel[2].current_index++] = (-32768 + (4369 * apu_stat.waveram_sample)) * 0.5;
 							break;
 
 						case 0x3:
-							apu_stat.channel[2].buffer[apu_stat.channel[2].current_index++] = (-32768 + (apu_stat.channel_right_volume * apu_stat.waveram_sample)) * 0.25;
+							apu_stat.channel[2].buffer[apu_stat.channel[2].current_index++] = (-32768 + (4369 * apu_stat.waveram_sample)) * 0.25;
 							break;
 
 						case 0x4:
-							apu_stat.channel[2].buffer[apu_stat.channel[2].current_index++] = (-32768 + (apu_stat.channel_right_volume * apu_stat.waveram_sample)) * 0.75;
+							apu_stat.channel[2].buffer[apu_stat.channel[2].current_index++] = (-32768 + (4369 * apu_stat.waveram_sample)) * 0.75;
 							break;
 
 						default:
@@ -1200,19 +1257,19 @@ void AGB_APU::buffer_channel_3()
 							break;
 
 						case 0x1:
-							apu_stat.channel[2].buffer[apu_stat.channel[2].current_index++] = -32768 + (apu_stat.channel_right_volume * apu_stat.waveram_sample);
+							apu_stat.channel[2].buffer[apu_stat.channel[2].current_index++] = -32768 + (4369 * apu_stat.waveram_sample);
 							break;
 
 						case 0x2:
-							apu_stat.channel[2].buffer[apu_stat.channel[2].current_index++] = (-32768 + (apu_stat.channel_right_volume * apu_stat.waveram_sample)) * 0.5;
+							apu_stat.channel[2].buffer[apu_stat.channel[2].current_index++] = (-32768 + (4369 * apu_stat.waveram_sample)) * 0.5;
 							break;
 
 						case 0x3:
-							apu_stat.channel[2].buffer[apu_stat.channel[2].current_index++] = (-32768 + (apu_stat.channel_right_volume * apu_stat.waveram_sample)) * 0.25;
+							apu_stat.channel[2].buffer[apu_stat.channel[2].current_index++] = (-32768 + (4369 * apu_stat.waveram_sample)) * 0.25;
 							break;
 
 						case 0x4:
-							apu_stat.channel[2].buffer[apu_stat.channel[2].current_index++] = (-32768 + (apu_stat.channel_right_volume * apu_stat.waveram_sample)) * 0.75;
+							apu_stat.channel[2].buffer[apu_stat.channel[2].current_index++] = (-32768 + (4369 * apu_stat.waveram_sample)) * 0.75;
 							break;
 
 						default:
@@ -1319,12 +1376,12 @@ void AGB_APU::buffer_channel_4()
 				//Generate high wave if LSFR returns 1 from first byte and volume is not muted
 				if((apu_stat.noise_stages == 15) && (apu_stat.noise_15_stage_lsfr & 0x1) && (apu_stat.channel[3].volume >= 1)) 
 				{ 
-					apu_stat.channel[3].buffer[apu_stat.channel[3].current_index++] = -32768 + (apu_stat.channel_right_volume * apu_stat.channel[3].volume); 
+					apu_stat.channel[3].buffer[apu_stat.channel[3].current_index++] = -32768 + (4369 * apu_stat.channel[3].volume); 
 				}
 
 				else if((apu_stat.noise_stages == 7) && (apu_stat.noise_7_stage_lsfr & 0x1) && (apu_stat.channel[3].volume >= 1)) 
 				{ 
-					apu_stat.channel[3].buffer[apu_stat.channel[3].current_index++] = -32768 + (apu_stat.channel_right_volume * apu_stat.channel[3].volume); 
+					apu_stat.channel[3].buffer[apu_stat.channel[3].current_index++] = -32768 + (4369 * apu_stat.channel[3].volume); 
 				}
 
 				//Or generate low wave

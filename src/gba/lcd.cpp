@@ -1628,6 +1628,8 @@ void AGB_LCD::step()
 			//Process Turbo Buttons
 			if(mem->g_pad->turbo_button_enabled) { mem->g_pad->process_turbo_buttons(); }
 
+			if(mem->g_pad->is_gb_player) { mem->g_pad->process_gb_rumble(); }
+
 			//Use SDL
 			if(config::sdl_render)
 			{
@@ -1766,8 +1768,13 @@ void AGB_LCD::step()
 			//Process motion controls
 			if((config::cart_type == AGB_GYRO_SENSOR) || (config::cart_type == AGB_TILT_SENSOR)) { mem->process_motion(); }
 
-			//Process GB Player Rumble
-			if((config::sio_device == 8) && (mem->sio_emu_device_ready)) { mem->process_player_rumble(); }
+			//Start GB Player Rumble transfers once-per-frame
+			if(config::sio_device == SIO_GB_PLAYER_RUMBLE)
+			{
+				if(!mem->g_pad->is_gb_player) { mem->g_pad->gb_player_count++; }
+				if(mem->g_pad->gb_player_timeout < 4) { mem->g_pad->gb_player_timeout++; }
+				else { mem->g_pad->stop_rumble(); }
+			}
 
 			//Process Play-Yan interrupts
 			if((config::cart_type == AGB_PLAY_YAN) && (mem->play_yan.irq_delay)) { mem->process_play_yan_irq(); }

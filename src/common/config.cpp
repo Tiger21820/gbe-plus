@@ -926,13 +926,16 @@ bool parse_cli_args()
 			else if(config::cli_args[x] == "--save-flash128") { config::agb_save_type = AGB_FLASH128; }
 
 			//Disable Pokemon Mini 3-color Mode
-			else if(config::cli_args[x] == "--min-disable-colors") { config::min_config &= ~0x1; }
+			else if(config::cli_args[x] == "--min-disable-colors") { config::min_config &= ~PMC_ENABLE_TRI_COLOR_MODE; }
 
 			//Disable Pokemon Mini RTC
-			else if(config::cli_args[x] == "--min-disable-rtc") { config::min_config &= ~0x2; }
+			else if(config::cli_args[x] == "--min-disable-rtc") { config::min_config &= ~PMC_ENABLE_RTC; }
 
-			//Enable shared EEPROM
-			else if(config::cli_args[x] == "--min-shared-eeprom") { config::min_config &= ~0x4; }
+			//Enable Pokemon Mini shared EEPROM
+			else if(config::cli_args[x] == "--min-shared-eeprom") { config::min_config &= ~PMC_ENABLE_PER_GAME_EEPROM; }
+
+			//Enable Pokemon Mini low battery
+			else if(config::cli_args[x] == "--min-low-battery") { config::min_config |= PMC_ENABLE_LOW_BATTERY; }
 			
 			//Use OpenGL for screen drawing
 			else if(config::cli_args[x] == "--opengl") { config::use_opengl = true; }
@@ -1229,10 +1232,10 @@ bool parse_ini_file()
 		if(!parse_ini_bool(ini_item, "#use_firmware", config::use_firmware, ini_opts, x)) { return false; }
 
 		//Emulated SIO device
-		if(!parse_ini_number(ini_item, "#sio_device", config::sio_device, ini_opts, x, 0, 20)) { return false; }
+		if(!parse_ini_number(ini_item, "#sio_device", config::sio_device, ini_opts, x, 0, 22)) { return false; }
 
 		//Emulated IR device
-		if(!parse_ini_number(ini_item, "#ir_device", config::ir_device, ini_opts, x, 0, 9)) { return false; }
+		if(!parse_ini_number(ini_item, "#ir_device", config::ir_device, ini_opts, x, 0, 10)) { return false; }
 
 		//Emulated Slot1 device
 		if(!parse_ini_number(ini_item, "#slot1_device", config::nds_slot1_device, ini_opts, x, 0, 1)) { return false; }

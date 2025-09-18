@@ -247,7 +247,7 @@ bool DMG_core::set_save_state_info(std::string filename)
 /****** Run the core in a loop until exit ******/
 void DMG_core::run_core()
 {
-	if(config::gb_type == 2) { core_cpu.reg.a = 0x11; }
+	if(config::gb_type == SYS_GBC) { core_cpu.reg.a = 0x11; }
 
 	//Begin running the core
 	while(running)
@@ -278,7 +278,10 @@ void DMG_core::run_core()
 			}
 			
 			//Update subscreen if necessary
-			if((core_pad.con_update) && (config::sio_device == 14)) { core_cpu.controllers.serial_io.singer_izek_update(); }
+			if((core_pad.con_update) && (config::sio_device == SIO_SEWING_MACHINE))
+			{
+				core_cpu.controllers.serial_io.singer_izek_update();
+			}
 
 			//Perform reset for GB Memory Cartridge
 			if((config::cart_type == DMG_GBMEM) && (core_mmu.cart.flash_stat == 0xF0)) { reset(); }
@@ -329,7 +332,7 @@ void DMG_core::run_core()
 
 				//Fade IR signal after a certain amount of time
 				//End hard sync after a certain amount of time
-				if(core_mmu.ir_stat.halt_counter > 0)
+				if(core_cpu.controllers.serial_io.sio_stat.halt_counter > 0)
 				{
 					if(core_mmu.ir_stat.fade_counter > 0)
 					{
@@ -342,11 +345,11 @@ void DMG_core::run_core()
 						}
 					}
 
-					core_mmu.ir_stat.halt_counter -= core_cpu.cycles;
+					core_cpu.controllers.serial_io.sio_stat.halt_counter -= core_cpu.cycles;
 
-					if(core_mmu.ir_stat.halt_counter <= 0)
+					if(core_cpu.controllers.serial_io.sio_stat.halt_counter <= 0)
 					{
-						core_mmu.ir_stat.halt_counter = 0;
+						core_cpu.controllers.serial_io.sio_stat.halt_counter = 0;
 						core_cpu.controllers.serial_io.stop_sync();
 					}
 				}
@@ -539,6 +542,16 @@ void DMG_core::run_core()
 							case GB_ASCII_TURBO_FILE:
 								core_cpu.controllers.serial_io.turbo_file_process();
 								break;
+
+							//Process Vaus Controller communications
+							case GB_VAUS_CONTROLLER:
+								core_cpu.controllers.serial_io.vaus_controller_process();
+								break;
+
+							//Process WorkBoy communications
+							case GB_WORKBOY:
+								core_cpu.controllers.serial_io.workboy_process();
+								break;
 						}
 
 						switch(core_cpu.controllers.serial_io.sio_stat.ir_type)
@@ -630,7 +643,7 @@ void DMG_core::step()
 
 			//Fade IR signal after a certain amount of time
 			//End hard sync after a certain amount of time
-			if(core_mmu.ir_stat.halt_counter > 0)
+			if(core_cpu.controllers.serial_io.sio_stat.halt_counter > 0)
 			{
 				if(core_mmu.ir_stat.fade_counter > 0)
 				{
@@ -643,11 +656,11 @@ void DMG_core::step()
 					}
 				}
 
-				core_mmu.ir_stat.halt_counter -= core_cpu.cycles;
+				core_cpu.controllers.serial_io.sio_stat.halt_counter -= core_cpu.cycles;
 
-				if(core_mmu.ir_stat.halt_counter <= 0)
+				if(core_cpu.controllers.serial_io.sio_stat.halt_counter <= 0)
 				{
-					core_mmu.ir_stat.halt_counter = 0;
+					core_cpu.controllers.serial_io.sio_stat.halt_counter = 0;
 					core_cpu.controllers.serial_io.stop_sync();
 				}
 			}
@@ -830,6 +843,16 @@ void DMG_core::step()
 						case GB_ASCII_TURBO_FILE:
 							core_cpu.controllers.serial_io.turbo_file_process();
 							break;
+
+						//Process Vaus Controller communications
+						case GB_VAUS_CONTROLLER:
+							core_cpu.controllers.serial_io.vaus_controller_process();
+							break;
+
+						//Process WorkBoy communications
+						case GB_WORKBOY:
+							core_cpu.controllers.serial_io.workboy_process();
+							break;
 					}
 
 					switch(core_cpu.controllers.serial_io.sio_stat.ir_type)
@@ -869,8 +892,14 @@ void DMG_core::handle_hotkey(SDL_Event& event)
 	//Disallow key repeats
 	if(event.key.repeat) { return; }
 
+	//Lock keyboard when using WorkBoy
+	if((event.type == SDL_KEYDOWN) && (event.key.keysym.sym != SDLK_F3) && (core_pad.workboy_lock_keyboard))
+	{
+		return;
+	}
+
 	//Quit on Q or ESC
-	if((event.type == SDL_KEYDOWN) && ((event.key.keysym.sym == SDLK_q) || (event.key.keysym.sym == SDLK_ESCAPE)))
+	else if((event.type == SDL_KEYDOWN) && ((event.key.keysym.sym == SDLK_q) || (event.key.keysym.sym == SDLK_ESCAPE)))
 	{
 		running = false; 
 		SDL_Quit();
@@ -1135,6 +1164,24 @@ void DMG_core::handle_hotkey(SDL_Event& event)
 					core_cpu.controllers.serial_io.sio_stat.shifts_left = 8;
 					core_cpu.controllers.serial_io.sio_stat.shift_counter = 0;
 				}
+
+				break;
+
+			//WorkBoy lock/unlock keyboard
+			case GB_WORKBOY:
+				if(core_pad.workboy_lock_keyboard)
+				{
+					core_pad.workboy_lock_keyboard = false;
+					config::osd_message = "KEYS UNLOCKED";
+				}
+
+				else
+				{
+					core_pad.workboy_lock_keyboard = true;
+					config::osd_message = "KEYS LOCKED";
+				}
+
+				config::osd_count = 180;
 
 				break;
 		}

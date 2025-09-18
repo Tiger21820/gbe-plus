@@ -185,6 +185,8 @@ gen_settings::gen_settings(QWidget *parent) : QDialog(parent)
 	sio_dev->addItem("V.R.S.");
 	sio_dev->addItem("Magical Watch");
 	sio_dev->addItem("GBA Wireless Adapter");
+	sio_dev->addItem("Vaus Controller");
+	sio_dev->addItem("WorkBoy");
 
 	config_sio = new QPushButton("Configure");
 
@@ -199,6 +201,7 @@ gen_settings::gen_settings(QWidget *parent) : QDialog(parent)
 	QLabel* ir_label = new QLabel("Infrared Device", ir_set);
 	ir_dev = new QComboBox(ir_set);
 	ir_dev->setToolTip("Changes the emulated IR device that will communicate with the emulated Game Boy");
+	ir_dev->addItem("None");
 	ir_dev->addItem("GBC IR Port");
 	ir_dev->addItem("Full Changer");
 	ir_dev->addItem("Pokemon Pikachu 2");
@@ -1844,19 +1847,19 @@ void gen_settings::set_ini_options()
 
 	switch(config::sio_device)
 	{
-		case 1:
-		case 3:
-		case 4:
-		case 5:
-		case 6:
-		case 7:
-		case 9:
-		case 10:
-		case 11:
-		case 12:
-		case 15:
-		case 16:
-		case 19:
+		case SIO_DMG_LINK_CABLE:
+		case SIO_MOBILE_ADAPTER:
+		case SIO_BTB_SCANNER:
+		case SIO_BARCODE_BOY:
+		case SIO_4_PLAYER_ADAPTER:
+		case SIO_AGB_LINK_CABLE:
+		case SIO_SOUL_DOLL_ADAPTER:
+		case SIO_BATTLE_CHIP_GATE:
+		case SIO_PROGRESS_CHIP_GATE:
+		case SIO_BEAST_LINK_GATE:
+		case SIO_MULTI_PLUST_ON_SYSTEM:
+		case SIO_TURBO_FILE:
+		case SIO_MAGICAL_WATCH:
 			config_sio->setEnabled(true);
 			break;
 
@@ -1866,8 +1869,8 @@ void gen_settings::set_ini_options()
 	//Emulated IR device
 	ir_dev->setCurrentIndex(config::ir_device);
 
-	if((config::ir_device == 1) || (config::ir_device == 2)
-	|| (config::ir_device == 3) || (config::ir_device == 5))
+	if((config::ir_device == IR_FULL_CHANGER) || (config::ir_device == IR_POCKET_PIKACHU)
+	|| (config::ir_device == IR_POCKET_SAKURA) || (config::ir_device == IR_CONSTANT_LIGHT))
 	{
 		config_ir->setEnabled(true);
 	}
@@ -1880,9 +1883,9 @@ void gen_settings::set_ini_options()
 	//Emulated Slot-2 device
 	slot2_dev->setCurrentIndex(config::nds_slot2_device);
 
-	if((config::nds_slot2_device == 3) || (config::nds_slot2_device == 4)
-	|| (config::nds_slot2_device == 5) || (config::nds_slot2_device == 6)
-	|| (config::nds_slot2_device == 7)) 
+	if((config::nds_slot2_device == NTR_S2_RUMBLE_PAK) || (config::nds_slot2_device == NTR_S2_GBA_CART)
+	|| (config::nds_slot2_device == NTR_S2_THRUSTMASTER) || (config::nds_slot2_device == NTR_S2_HCV_1000)
+	|| (config::nds_slot2_device == NTR_S2_MAGIC_READER)) 
 	{ 
 		config_slot2->setEnabled(true);
 	}
@@ -2165,8 +2168,8 @@ void gen_settings::set_ini_options()
 	else { real_server->setChecked(false); }
 
 	//Battle Gate Type
-	if(config::sio_device == 11) { chip_gate_type->setCurrentIndex(1); }
-	else if(config::sio_device == 12) { chip_gate_type->setCurrentIndex(2); }
+	if(config::sio_device == SIO_PROGRESS_CHIP_GATE) { chip_gate_type->setCurrentIndex(1); }
+	else if(config::sio_device == SIO_BEAST_LINK_GATE) { chip_gate_type->setCurrentIndex(2); }
 	else { chip_gate_type->setCurrentIndex(0); }
 
 	//Battle Chips 1-4
@@ -2217,19 +2220,19 @@ void gen_settings::sio_dev_change()
 
 	switch(config::sio_device)
 	{
-		case 1:
-		case 3:
-		case 4:
-		case 5:
-		case 6:
-		case 7:
-		case 9:
-		case 10:
-		case 11:
-		case 12:
-		case 15:
-		case 16:
-		case 19:
+		case SIO_DMG_LINK_CABLE:
+		case SIO_MOBILE_ADAPTER:
+		case SIO_BTB_SCANNER:
+		case SIO_BARCODE_BOY:
+		case SIO_4_PLAYER_ADAPTER:
+		case SIO_AGB_LINK_CABLE:
+		case SIO_SOUL_DOLL_ADAPTER:
+		case SIO_BATTLE_CHIP_GATE:
+		case SIO_PROGRESS_CHIP_GATE:
+		case SIO_BEAST_LINK_GATE:
+		case SIO_MULTI_PLUST_ON_SYSTEM:
+		case SIO_TURBO_FILE:
+		case SIO_MAGICAL_WATCH:
 			config_sio->setEnabled(true);
 			break;
 
@@ -2252,8 +2255,8 @@ void gen_settings::ir_dev_change()
 
 	config::ir_device = ir_dev->currentIndex();
 
-	if((config::ir_device == 1) || (config::ir_device == 2)
-	|| (config::ir_device == 3) || (config::ir_device == 5))
+	if((config::ir_device == IR_FULL_CHANGER) || (config::ir_device == IR_POCKET_PIKACHU)
+	|| (config::ir_device == IR_POCKET_SAKURA) || (config::ir_device == IR_CONSTANT_LIGHT))
 	{
 		config_ir->setEnabled(true);
 	}
@@ -2269,9 +2272,9 @@ void gen_settings::slot2_dev_change()
 {
 	config::nds_slot2_device = slot2_dev->currentIndex();
 
-	if((config::nds_slot2_device == 3) || (config::nds_slot2_device == 4) 
-	|| (config::nds_slot2_device == 5) || (config::nds_slot2_device == 6)
-	|| (config::nds_slot2_device == 7)) 
+	if((config::nds_slot2_device == NTR_S2_RUMBLE_PAK) || (config::nds_slot2_device == NTR_S2_GBA_CART) 
+	|| (config::nds_slot2_device == NTR_S2_THRUSTMASTER) || (config::nds_slot2_device == NTR_S2_HCV_1000)
+	|| (config::nds_slot2_device == NTR_S2_MAGIC_READER)) 
 	{
 		config_slot2->setEnabled(true);
 	}
@@ -2313,19 +2316,63 @@ void gen_settings::show_sio_config()
 {
 	switch(config::sio_device)
 	{
-		case 1: tabs->setCurrentIndex(4); break;
-		case 3: tabs->setCurrentIndex(4); break;
-		case 4: qt_gui::draw_surface->set_card_file(); break;
-		case 5: qt_gui::draw_surface->set_card_file(); break;
-		case 6: tabs->setCurrentIndex(4); break;
-		case 7: tabs->setCurrentIndex(4); break;
-		case 9: qt_gui::draw_surface->set_data_file(); break;
-		case 10: tabs->setCurrentIndex(3); controls_combo->setCurrentIndex(3); chip_gate_type->setCurrentIndex(0); break;
-		case 11: tabs->setCurrentIndex(3); controls_combo->setCurrentIndex(3); chip_gate_type->setCurrentIndex(1); break;
-		case 12: tabs->setCurrentIndex(3); controls_combo->setCurrentIndex(3); chip_gate_type->setCurrentIndex(2); break;
-		case 15: multi_plust_menu->show(); break;
-		case 16: turbo_file_menu->show(); break;
-		case 19: magical_watch_menu->show(); break;
+		case SIO_DMG_LINK_CABLE:
+			tabs->setCurrentIndex(4);
+			break;
+
+		case SIO_MOBILE_ADAPTER:
+			tabs->setCurrentIndex(4);
+			break;
+
+		case SIO_BTB_SCANNER:
+			qt_gui::draw_surface->set_card_file();
+			break;
+
+		case SIO_BARCODE_BOY:
+			qt_gui::draw_surface->set_card_file();
+			break;
+
+		case SIO_4_PLAYER_ADAPTER:
+			tabs->setCurrentIndex(4);
+			break;
+
+		case SIO_AGB_LINK_CABLE:
+			tabs->setCurrentIndex(4);
+			break;
+
+		case SIO_SOUL_DOLL_ADAPTER:
+			qt_gui::draw_surface->set_data_file();
+			break;
+
+		case SIO_BATTLE_CHIP_GATE:
+			tabs->setCurrentIndex(3);
+			controls_combo->setCurrentIndex(3);
+			chip_gate_type->setCurrentIndex(0);
+			break;
+
+		case SIO_PROGRESS_CHIP_GATE:
+			tabs->setCurrentIndex(3);
+			controls_combo->setCurrentIndex(3);
+			chip_gate_type->setCurrentIndex(1);
+			break;
+
+		case SIO_BEAST_LINK_GATE:
+			tabs->setCurrentIndex(3);
+			controls_combo->setCurrentIndex(3);
+			chip_gate_type->setCurrentIndex(2);
+			break;
+
+		case SIO_MULTI_PLUST_ON_SYSTEM:
+			multi_plust_menu->show();
+			break;
+
+		case SIO_TURBO_FILE:
+			turbo_file_menu->show();
+			break;
+
+		case SIO_MAGICAL_WATCH:
+			magical_watch_menu->show();
+			break;
 	}
 }
 
@@ -2334,10 +2381,21 @@ void gen_settings::show_ir_config()
 {
 	switch(config::ir_device)
 	{
-		case 0x1: full_changer_menu->show(); break;
-		case 0x2: pokemon_pikachu_menu->show(); break;
-		case 0x3: pocket_sakura_menu->show(); break;
-		case 0x5: chalien_menu->show(); break;
+		case IR_FULL_CHANGER:
+			full_changer_menu->show();
+			break;
+
+		case IR_POCKET_PIKACHU:
+			pokemon_pikachu_menu->show();
+			break;
+
+		case IR_POCKET_SAKURA:
+			pocket_sakura_menu->show();
+			break;
+
+		case IR_CONSTANT_LIGHT:
+			chalien_menu->show();
+			break;
 	}	
 }
 
@@ -2346,11 +2404,26 @@ void gen_settings::show_slot2_config()
 {
 	switch(config::nds_slot2_device)
 	{
-		case 0x3: tabs->setCurrentIndex(3); controls_combo->setCurrentIndex(1); break;
-		case 0x4: set_slot2_gba_file(); break;
-		case 0x5: ubisoft_pedometer_menu->show(); break;
-		case 0x6: qt_gui::draw_surface->set_card_file(); break;
-		case 0x7: magic_reader_menu->show(); break;
+		case NTR_S2_RUMBLE_PAK:
+			tabs->setCurrentIndex(3);
+			controls_combo->setCurrentIndex(1);
+			break;
+
+		case NTR_S2_GBA_CART:
+			set_slot2_gba_file();
+			break;
+
+		case NTR_S2_THRUSTMASTER:
+			ubisoft_pedometer_menu->show();
+			break;
+
+		case NTR_S2_HCV_1000:
+			qt_gui::draw_surface->set_card_file();
+			break;
+
+		case NTR_S2_MAGIC_READER:
+			magic_reader_menu->show();
+			break;
 	}
 }
 

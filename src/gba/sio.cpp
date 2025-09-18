@@ -79,9 +79,9 @@ AGB_SIO::~AGB_SIO()
 	if(sender.host_socket != NULL)
 	{
 		//Send disconnect byte to another system
-		u8 temp_buffer[5] = {0, 0, 0, 0, 0x80} ;
+		u8 temp_buffer[6] = { 0, 0, 0, 0, 0, 0x80 };
 		
-		SDLNet_TCP_Send(sender.host_socket, (void*)temp_buffer, 5);
+		SDLNet_TCP_Send(sender.host_socket, (void*)temp_buffer, 6);
 
 		SDLNet_TCP_DelSocket(tcp_sockets, sender.host_socket);
 		if(sender.host_init) { SDLNet_TCP_Close(sender.host_socket); }
@@ -195,6 +195,9 @@ bool AGB_SIO::init()
 		sio_stat.sync_counter = (config::netplay_server_port > config::netplay_client_port) ? 64 : 0;
 	}
 
+	//By default, hard sync does not activate until a SIO transfer is initiated
+	sio_stat.use_hard_sync = false;
+
 	#endif
 
 	std::cout<<"SIO::Initialized\n";
@@ -208,8 +211,10 @@ void AGB_SIO::reset()
 	sio_stat.connected = false;
 	sio_stat.active_transfer = false;
 	sio_stat.internal_clock = false;
+	sio_stat.send_so_status = false;
 	sio_stat.sync_counter = 0;
 	sio_stat.sync_clock = config::netplay_sync_threshold;
+	sio_stat.sync_delay = 0;
 	sio_stat.sync = false;
 	sio_stat.connection_ready = false;
 	sio_stat.emu_device_ready = false;
@@ -220,72 +225,73 @@ void AGB_SIO::reset()
 	sio_stat.r_cnt = 0x8000;
 	sio_stat.cnt = 0;
 	sio_stat.player_id = config::netplay_id;
+	sio_stat.halt_counter = 0;
 
 	switch(config::sio_device)
 	{
 		//Ignore invalid DMG/GBC devices
-		case 0x1:
-		case 0x2:
-		case 0x4:
-		case 0x5:
-		case 0x6:
+		case SIO_DMG_LINK_CABLE:
+		case SIO_PRINTER:
+		case SIO_BTB_SCANNER:
+		case SIO_BARCODE_BOY:
+		case SIO_4_PLAYER_ADAPTER:
 			sio_stat.sio_type = INVALID_GBA_DEVICE;
 			break;
 
 		//Mobile Adapter GB
-		case 0x3:
+		case SIO_MOBILE_ADAPTER:
 			sio_stat.sio_type = GBA_MOBILE_ADAPTER;
 			break;
 
 		//GB Player Rumble
-		case 0x8:
+		case SIO_GB_PLAYER_RUMBLE:
 			sio_stat.sio_type = GBA_PLAYER_RUMBLE;
 			break;
 
 		//Soul Doll Adapter
-		case 0x9:
+		case SIO_SOUL_DOLL_ADAPTER:
 			sio_stat.sio_type = GBA_SOUL_DOLL_ADAPTER;
 			break;
 
 		//Battle Chip Gate, Progress Chip Gate, and Beast Link Gate
-		case 0xA:
-		case 0xB:
-		case 0xC:
+		case SIO_BATTLE_CHIP_GATE:
+		case SIO_PROGRESS_CHIP_GATE:
+		case SIO_BEAST_LINK_GATE:
 			sio_stat.sio_type = GBA_BATTLE_CHIP_GATE;
 			break;
 
 		//Power Antenna + Bug Sensor
-		case 0xD:
+		case SIO_POWER_ANTENNA:
 			sio_stat.sio_type = GBA_POWER_ANTENNA;
 			break;
 
 		//Multi Plust On System
-		case 0xF:
+		case SIO_MULTI_PLUST_ON_SYSTEM:
 			sio_stat.sio_type = GBA_MULTI_PLUST_ON_SYSTEM;
 			break;
 
 		//Turbo File Advance
-		case 16:
+		case SIO_TURBO_FILE:
 			sio_stat.sio_type = GBA_TURBO_FILE;
 			break;
 
 		//AGB-006
-		case 17:
+		case SIO_GBA_IR_ADAPTER:
 			sio_stat.sio_type = GBA_IR_ADAPTER;
 			break;
 
 		//Virtureal Racing System
-		case 18:
+		case SIO_VIRTUREAL_RACING_SYSTEM:
 			sio_stat.sio_type = GBA_VRS;
 			break;
 
 		//Magic Watch
-		case 19:
+		case SIO_MAGICAL_WATCH:
 			sio_stat.sio_type = GBA_MAGIC_WATCH;
 			break;
 
 		//GBA Wireless Adapter
-		case 20:
+		case SIO_GBA_WIRELESS_ADAPTER:
 			sio_stat.sio_type = GBA_WIRELESS_ADAPTER;
 			break;
 
@@ -298,32 +304,13 @@ void AGB_SIO::reset()
 	sio_stat.sio_mode = GENERAL_PURPOSE;
 
 	//GBA Player Rumble
-	player_rumble.sio_buffer.push_back(0x0000494E);
-	player_rumble.sio_buffer.push_back(0x8888494E);
-	player_rumble.sio_buffer.push_back(0xB6B1494E);
-	player_rumble.sio_buffer.push_back(0xB6B1544E);
-	player_rumble.sio_buffer.push_back(0xABB1544E);
-	player_rumble.sio_buffer.push_back(0xABB14E45);
-	player_rumble.sio_buffer.push_back(0xB1BA4E45);
-	player_rumble.sio_buffer.push_back(0xB1BA4F44);
-	player_rumble.sio_buffer.push_back(0xB0BB4F44);
-	player_rumble.sio_buffer.push_back(0xB0BB8002);
-	player_rumble.sio_buffer.push_back(0x10000010);
-	player_rumble.sio_buffer.push_back(0x20000013);
-	player_rumble.sio_buffer.push_back(0x30000003);
-	player_rumble.sio_buffer.push_back(0x30000003);
-	player_rumble.sio_buffer.push_back(0x30000003);
-	player_rumble.sio_buffer.push_back(0x30000003);
-	player_rumble.sio_buffer.push_back(0x30000003);
-	player_rumble.sio_buffer.push_back(0x00000000);
-	
-	player_rumble.buffer_index = 0;
-	player_rumble.current_state = GB_PLAYER_RUMBLE_INACTIVE;
+	player_rumble.data_count = 0;
+	player_rumble.current_state = GBP_RUMBLE_INIT;
 
 	//Soul Doll Adapter
 	soul_doll_adapter_reset();
 
-	if(config::sio_device == 9) { soul_doll_adapter_load_data(config::external_data_file); }
+	if(config::sio_device == SIO_SOUL_DOLL_ADAPTER) { soul_doll_adapter_load_data(config::external_data_file); }
 
 	//Battle Chip Gate
 	chip_gate.data = 0x8E70;
@@ -371,9 +358,9 @@ void AGB_SIO::reset()
 
 	switch(config::sio_device)
 	{
-		case 0xA: chip_gate.unit_code = 0xFFC6; break;
-		case 0xB: chip_gate.unit_code = 0xFFC7; break;
-		case 0xC: chip_gate.unit_code = 0xFFC4; break;
+		case SIO_BATTLE_CHIP_GATE: chip_gate.unit_code = 0xFFC6; break;
+		case SIO_PROGRESS_CHIP_GATE: chip_gate.unit_code = 0xFFC7; break;
+		case SIO_BEAST_LINK_GATE: chip_gate.unit_code = 0xFFC4; break;
 		default: chip_gate.unit_code = 0;
 	}
 
@@ -387,7 +374,7 @@ void AGB_SIO::reset()
 	turbo_file.mem_card_status = 0x5;
 	turbo_file.bank = 0x0;
 
-	if(config::sio_device == 16)
+	if(config::sio_device == SIO_TURBO_FILE)
 	{
 		std::string turbo_save = config::data_path + "turbo_file_advance.sav";
 		turbo_file_load_data(turbo_save);
@@ -411,7 +398,7 @@ void AGB_SIO::reset()
 	cdz_e.boost = 0;
 	cdz_e.setup_sub_screen = false;
 
-	if(config::ir_device == 6) { cdz_e.active = zoids_cdz_load_data(); }
+	if(config::ir_device == IR_ZOIDS) { cdz_e.active = zoids_cdz_load_data(); }
 
 	//Virtureal Racing System
 	vrs.current_state = VRS_STANDBY;
@@ -449,7 +436,7 @@ void AGB_SIO::reset()
 	vrs.crash_duration[0] = 0;
 	vrs.crash_duration[1] = 0;
 
-	if(config::sio_device == 18) { vrs.active = vrs_load_data(); }
+	if(config::sio_device == SIO_VIRTUREAL_RACING_SYSTEM) { vrs.active = vrs_load_data(); }
 
 	//Magic Watch
 	magic_watch.active = false;
@@ -464,7 +451,7 @@ void AGB_SIO::reset()
 	magic_watch.dummy_reads = 0;
 	magic_watch.active_count = 0;
 
-	if(config::sio_device == 19)
+	if(config::sio_device == SIO_MAGICAL_WATCH)
 	{
 		magic_watch.data.resize(9, 0x00);
 		magic_watch.data[0] = (config::mw_data[0] < 0x63) ? config::mw_data[0] : 0x63;
@@ -513,9 +500,9 @@ void AGB_SIO::reset()
 		if(sender.host_socket != NULL)
 		{
 			//Send disconnect byte to another system
-			u8 temp_buffer[5] = {0, 0, 0, 0, 0x80} ;
+			u8 temp_buffer[6] = { 0, 0, 0, 0, 0, 0x80 };
 		
-			SDLNet_TCP_Send(sender.host_socket, (void*)temp_buffer, 5);
+			SDLNet_TCP_Send(sender.host_socket, (void*)temp_buffer, 6);
 
 			if(sender.host_init) { SDLNet_TCP_Close(sender.host_socket); }
 		}
@@ -529,31 +516,38 @@ bool AGB_SIO::send_data()
 {
 	#ifdef GBE_NETPLAY
 
-	u8 temp_buffer[5];
+	u8 temp_buffer[6];
 	temp_buffer[0] = (sio_stat.transfer_data & 0xFF);
 	temp_buffer[1] = ((sio_stat.transfer_data >> 8) & 0xFF);
 	temp_buffer[2] = ((sio_stat.transfer_data >> 16) & 0xFF);
 	temp_buffer[3] = ((sio_stat.transfer_data >> 24) & 0xFF);
-	temp_buffer[4] = (0x40 | sio_stat.player_id);
+	temp_buffer[4] = sio_stat.player_id;
+	temp_buffer[5] = 0x40;
 
 	//Set Bits 2-3 of status byte to SIO mode
 	//UART and General Purpose not supported atm
 	switch(sio_stat.sio_mode)
 	{
+		case NORMAL_8BIT:
+			temp_buffer[5] |= 0x02;
+			if(sio_stat.send_so_status) { temp_buffer[5] |= 0x01; }
+			break;
+
 		case NORMAL_32BIT:
-			temp_buffer[4] |= 0x4;
+			temp_buffer[5] |= 0x04;
+			if(sio_stat.send_so_status) { temp_buffer[5] |= 0x01; }
 			break;
 
 		case MULTIPLAY_16BIT:
-			temp_buffer[4] |= 0x8;
+			temp_buffer[5] |= 0x08;
 			break;
 
 		case JOY_BUS:
-			temp_buffer[4] |= 0xC;
+			temp_buffer[5] |= 0x0C;
 			break;
 	}
 
-	if(SDLNet_TCP_Send(sender.host_socket, (void*)temp_buffer, 5) < 5)
+	if(SDLNet_TCP_Send(sender.host_socket, (void*)temp_buffer, 6) < 0)
 	{
 		std::cout<<"SIO::Error - Host failed to send data to client\n";
 		sio_stat.connected = false;
@@ -562,33 +556,42 @@ bool AGB_SIO::send_data()
 		return false;
 	}
 
-	//Wait for other GBA to acknowledge
-	if(SDLNet_TCP_Recv(server.remote_socket, temp_buffer, 5) > 0)
+	if(sio_stat.send_so_status && ((sio_stat.sio_mode == NORMAL_8BIT) || (sio_stat.sio_mode == NORMAL_32BIT)))
 	{
-		//Only process response if the emulated SIO connection is ready
-		if(sio_stat.connection_ready)
+		sio_stat.send_so_status = false;
+	}
+
+	//Wait for other GBA to acknowledge
+	if(SDLNet_TCP_Recv(server.remote_socket, temp_buffer, 6) >= 6)
+	{
+		//16-bit Multiplayer
+		if((sio_stat.sio_mode == MULTIPLAY_16BIT) && (temp_buffer[5] == 0x48))
 		{
-			//16-bit Multiplayer
-			if(sio_stat.sio_mode == MULTIPLAY_16BIT)
+			//Reset transfer data
+			mem->write_u32_fast(0x4000120, 0xFFFFFFFF);
+			mem->write_u32_fast(0x4000124, 0xFFFFFFFF);
+
+			//Only process response if the emulated SIO connection is ready
+			if(sio_stat.connection_ready)
 			{
-				switch(temp_buffer[4] & 0x3)
+				switch(temp_buffer[4] & 0x03)
 				{
-					case 0x0:
+					case 0x00:
 						mem->memory_map[0x4000120] = temp_buffer[0];
 						mem->memory_map[0x4000121] = temp_buffer[1];
 						break;
 
-					case 0x1:
+					case 0x01:
 						mem->memory_map[0x4000122] = temp_buffer[0];
 						mem->memory_map[0x4000123] = temp_buffer[1];
 						break; 
 
-					case 0x2:
+					case 0x02:
 						mem->memory_map[0x4000124] = temp_buffer[0];
 						mem->memory_map[0x4000125] = temp_buffer[1];
 						break; 
 
-					case 0x3:
+					case 0x03:
 						mem->memory_map[0x4000126] = temp_buffer[0];
 						mem->memory_map[0x4000127] = temp_buffer[1];
 						break;
@@ -601,22 +604,28 @@ bool AGB_SIO::send_data()
 				if(sio_stat.cnt & 0x4000) { mem->memory_map[REG_IF] |= 0x80; }
 
 				//Set SC and SO HIGH on master
-				mem->write_u8(R_CNT, (mem->memory_map[R_CNT] | 0x9));
+				mem->write_u8(R_CNT, (mem->memory_map[R_CNT] | 0x09));
 
 				sio_stat.active_transfer = false;
 				sio_stat.shifts_left = 0;
 				sio_stat.shift_counter = 0;
 			}
-		}
 
-		//Otherwise delay the transfer
-		else
-		{
-			sio_stat.active_transfer = true;
-			sio_stat.shifts_left = 16;
-			sio_stat.shift_counter = 0;
-			mem->memory_map[SIO_CNT] |= 0x80;
+			//Otherwise delay the transfer
+			else
+			{
+				sio_stat.active_transfer = true;
+				sio_stat.shifts_left = 1;
+				sio_stat.shift_counter = 0;
+				mem->memory_map[SIO_CNT] |= 0x80;
+			}
 		}
+	}
+
+	//Reset hard sync if new SIO byte sent
+	if((config::netplay_hard_sync) && (!sio_stat.use_hard_sync))
+	{
+		sio_stat.use_hard_sync = true;
 	}
 
 	#endif
@@ -629,7 +638,7 @@ bool AGB_SIO::receive_byte()
 {
 	#ifdef GBE_NETPLAY
 
-	u8 temp_buffer[5] = {0, 0, 0, 0, 0} ;
+	u8 temp_buffer[6] = { 0, 0, 0, 0, 0, 0 };
 
 	//Check the status of connection
 	SDLNet_CheckSockets(tcp_sockets, 0);
@@ -637,13 +646,13 @@ bool AGB_SIO::receive_byte()
 	//If this socket is active, receive the transfer
 	if(SDLNet_SocketReady(server.remote_socket))
 	{
-		if(SDLNet_TCP_Recv(server.remote_socket, temp_buffer, 5) > 0)
+		if(SDLNet_TCP_Recv(server.remote_socket, temp_buffer, 6) >= 6)
 		{
 			//Stop sync
-			if(temp_buffer[4] == 0xFF)
+			if(temp_buffer[5] == 0xFF)
 			{
 				//Check ID byte
-				if(temp_buffer[3] == sio_stat.player_id)
+				if(temp_buffer[4] == sio_stat.player_id)
 				{
 					std::cout<<"SIO::Error - Netplay IDs are the same. Closing connection.\n";
 					sio_stat.connected = false;
@@ -652,29 +661,39 @@ bool AGB_SIO::receive_byte()
 					return false;
 				}
 
-				sio_stat.connection_ready = (temp_buffer[2] == sio_stat.sio_mode) ? true : false;
-
+				sio_stat.connection_ready = (temp_buffer[3] == sio_stat.sio_mode) ? true : false;
 				sio_stat.sync = false;
+				sio_stat.sync_counter = 0;
+				sio_stat.sync_clock = config::netplay_sync_threshold + temp_buffer[2];
+
+				return true;
+			}
+
+			//Stop hard sync
+			else if(temp_buffer[5] == 0xF1)
+			{
+				sio_stat.sync = false;
+				sio_stat.use_hard_sync = false;
 				sio_stat.sync_counter = 0;
 				return true;
 			}
 
 			//Stop sync with acknowledgement
-			if(temp_buffer[4] == 0xF0)
+			if(temp_buffer[5] == 0xF0)
 			{
 				sio_stat.sync = false;
 				sio_stat.sync_counter = 0;
 
-				temp_buffer[4] = 0x1;
+				temp_buffer[5] = 0x01;
 
 				//Send acknowlegdement
-				SDLNet_TCP_Send(sender.host_socket, (void*)temp_buffer, 5);
+				SDLNet_TCP_Send(sender.host_socket, (void*)temp_buffer, 6);
 
 				return true;
 			}
 
 			//Disconnect netplay
-			else if(temp_buffer[4] == 0x80)
+			else if(temp_buffer[5] == 0x80)
 			{
 				sio_stat.connected = false;
 				sio_stat.sync = false;
@@ -683,62 +702,77 @@ bool AGB_SIO::receive_byte()
 			}
 
 			//Process GBA SIO communications
-			else if((temp_buffer[4] >= 0x40) && (temp_buffer[4] <= 0x4F))
+			else if((temp_buffer[5] >= 0x40) && (temp_buffer[5] <= 0x4F))
 			{
-				if(sio_stat.connection_ready)
+				//Receive SO status for NORMAL_8BIT and NORMAL_32BIT modes
+				if((sio_stat.sio_mode == NORMAL_8BIT) || (sio_stat.sio_mode == NORMAL_32BIT))
 				{
-					//Reset transfer data
-					mem->write_u32_fast(0x4000120, 0xFFFFFFFF);
-					mem->write_u32_fast(0x4000124, 0xFFFFFFFF);
-
-					//Raise SIO IRQ after sending byte
-					if(sio_stat.cnt & 0x4000) { mem->memory_map[REG_IF] |= 0x80; }
-
-					//Set SO HIGH on all children
-					mem->write_u8(R_CNT, (mem->memory_map[R_CNT] | 0x8));
-
-					//Store byte from transfer into SIO data registers - 16-bit Multiplayer
-					if((sio_stat.sio_mode == MULTIPLAY_16BIT) && ((temp_buffer[4] & 0xC) == 0x8))
+					if(temp_buffer[5] & 0x01)
 					{
-						switch(temp_buffer[4] & 0x3)
-						{
-							case 0x0:
-								mem->memory_map[0x4000120] = temp_buffer[0];
-								mem->memory_map[0x4000121] = temp_buffer[1];
-								break;
-
-							case 0x1:
-								mem->memory_map[0x4000122] = temp_buffer[0];
-								mem->memory_map[0x4000123] = temp_buffer[1];
-								break; 
-
-							case 0x2:
-								mem->memory_map[0x4000124] = temp_buffer[0];
-								mem->memory_map[0x4000125] = temp_buffer[1];
-								break; 
-
-							case 0x3:
-								mem->memory_map[0x4000126] = temp_buffer[0];
-								mem->memory_map[0x4000127] = temp_buffer[1];
-								break;
-						}
-
-						sio_stat.transfer_data = (mem->memory_map[SIO_DATA_8 + 1] << 8) | mem->memory_map[SIO_DATA_8];
-
-						//Set own multiplayer data based on SIOMLT_SEND
-						mem->write_u16_fast((0x4000120 + (sio_stat.player_id << 1)), sio_stat.transfer_data);
-
-						temp_buffer[0] = (sio_stat.transfer_data & 0xFF);
-						temp_buffer[1] = ((sio_stat.transfer_data >> 8) & 0xFF);
-						temp_buffer[2] = ((sio_stat.transfer_data >> 16) & 0xFF);
-						temp_buffer[3] = ((sio_stat.transfer_data >> 24) & 0xFF);
+						u8 status = temp_buffer[0] & 0x08;
+						
+						if(status) { sio_stat.cnt |= 0x04; }
+						else { sio_stat.cnt &= ~0x04; }
 					}
-
-					temp_buffer[4] = sio_stat.player_id;
 				}
 
+				else if(sio_stat.sio_mode == MULTIPLAY_16BIT)
+				{
+					if(sio_stat.connection_ready)
+					{
+						//Reset transfer data
+						mem->write_u32_fast(0x4000120, 0xFFFFFFFF);
+						mem->write_u32_fast(0x4000124, 0xFFFFFFFF);
+
+						//Raise SIO IRQ after sending byte
+						if(sio_stat.cnt & 0x4000) { mem->memory_map[REG_IF] |= 0x80; }
+
+						//Set SO HIGH on all children
+						mem->write_u8(R_CNT, (mem->memory_map[R_CNT] | 0x08));
+
+						//Store byte from transfer into SIO data registers - 16-bit Multiplayer
+						if((sio_stat.sio_mode == MULTIPLAY_16BIT) && (temp_buffer[5] == 0x48))
+						{
+							switch(temp_buffer[4] & 0x3)
+							{
+								case 0x0:
+									mem->memory_map[0x4000120] = temp_buffer[0];
+									mem->memory_map[0x4000121] = temp_buffer[1];
+									break;
+
+								case 0x1:
+									mem->memory_map[0x4000122] = temp_buffer[0];
+									mem->memory_map[0x4000123] = temp_buffer[1];
+									break; 
+
+								case 0x2:
+									mem->memory_map[0x4000124] = temp_buffer[0];
+									mem->memory_map[0x4000125] = temp_buffer[1];
+									break; 
+
+								case 0x3:
+									mem->memory_map[0x4000126] = temp_buffer[0];
+									mem->memory_map[0x4000127] = temp_buffer[1];
+									break;
+							}
+
+							sio_stat.transfer_data = (mem->memory_map[SIO_DATA_8 + 1] << 8) | mem->memory_map[SIO_DATA_8];
+
+							//Set own multiplayer data based on SIOMLT_SEND
+							mem->write_u16_fast((0x4000120 + (sio_stat.player_id << 1)), sio_stat.transfer_data);
+
+							temp_buffer[0] = (sio_stat.transfer_data & 0xFF);
+							temp_buffer[1] = ((sio_stat.transfer_data >> 8) & 0xFF);
+							temp_buffer[2] = ((sio_stat.transfer_data >> 16) & 0xFF);
+							temp_buffer[3] = ((sio_stat.transfer_data >> 24) & 0xFF);
+						}
+					}
+				}
+
+				temp_buffer[4] = sio_stat.player_id;
+
 				//Send acknowledgement
-				if(SDLNet_TCP_Send(sender.host_socket, (void*)temp_buffer, 5) < 5)
+				if(SDLNet_TCP_Send(sender.host_socket, (void*)temp_buffer, 6) < 0)
 				{
 					std::cout<<"SIO::Error - Host failed to send data to client\n";
 					sio_stat.connected = false;
@@ -746,6 +780,15 @@ bool AGB_SIO::receive_byte()
 					sender.connected = false;
 					return false;
 				}
+
+				//Start hard sync timeout countdown
+				sio_stat.halt_counter = 0x400000;
+
+				//Reset hard sync if new IR signal received
+				if((config::netplay_hard_sync) && (!sio_stat.use_hard_sync))
+				{
+					sio_stat.use_hard_sync = true;
+				} 
 
 				return true;
 			}
@@ -762,10 +805,14 @@ bool AGB_SIO::request_sync()
 {
 	#ifdef GBE_NETPLAY
 
-	u8 temp_buffer[5] = {0, 0, sio_stat.sio_mode, sio_stat.player_id, 0xFF} ;
+	//Calculate the number of cycles this instance ran beyond the specified hard sync threshold
+	//Next instance will try to catch up to better stay in sync
+	sio_stat.sync_delay = sio_stat.sync_counter - sio_stat.sync_clock;
+
+	u8 temp_buffer[6] = { 0, 0, sio_stat.sync_delay, sio_stat.sio_mode, sio_stat.player_id, 0xFF } ;
 
 	//Send the sync code 0xFF
-	if(SDLNet_TCP_Send(sender.host_socket, (void*)temp_buffer, 5) < 5)
+	if(SDLNet_TCP_Send(sender.host_socket, (void*)temp_buffer, 6) < 0)
 	{
 		std::cout<<"SIO::Error - Host failed to send data to client\n";
 		sio_stat.connected = false;
@@ -775,6 +822,33 @@ bool AGB_SIO::request_sync()
 	}
 
 	sio_stat.sync = true;
+
+	#endif
+
+	return true;
+}
+
+/****** Temporarily stops syncronization with another system ******/
+bool AGB_SIO::stop_sync()
+{
+	#ifdef GBE_NETPLAY
+	
+	u8 temp_buffer[6] = { 0, 0, 0, 0, 0, 0xF1 };
+
+	//Send the stop sync code 0xF1
+	if(SDLNet_TCP_Send(sender.host_socket, (void*)temp_buffer, 6) < 0)
+	{
+		std::cout<<"SIO::Error - Host failed to send data to client\n";
+		sio_stat.connected = false;
+		server.connected = false;
+		sender.connected = false;
+		return false;
+	}
+
+	sio_stat.sync = false;
+	sio_stat.use_hard_sync = false;
+	sio_stat.sync_counter = 0;
+	sio_stat.halt_counter = 0;
 
 	#endif
 
@@ -831,37 +905,75 @@ void AGB_SIO::process_network_communication()
 /****** Processes GB Player Rumble SIO communications ******/
 void AGB_SIO::gba_player_rumble_process()
 {
-	//Check rumble status
-	if(player_rumble.buffer_index == 17)
+	//Generate messages to GBA
+	u32 rx_msg = mem->read_u32_fast(SIO_DATA_32_L);
+	u32 tx_msg = 0;
+
+	//Enter reset state
+	bool reset_normal = ((player_rumble.current_state == GBP_RUMBLE_STATUS) && ((rx_msg >> 16) != 0x4000));
+	bool reset_timeout = (mem->g_pad->gb_player_timeout >= 4);
+
+	if(reset_normal || reset_timeout)
 	{
-		u8 rumble_stat = mem->memory_map[SIO_DATA_32_L];
+		player_rumble.current_state = GBP_RUMBLE_INIT;
+		if(reset_timeout) { mem->g_pad->stop_rumble(); }
+	}
 
-		//Turn rumble on
-		if(rumble_stat == 0x26) { mem->g_pad->start_rumble(); }
+	switch(player_rumble.current_state)
+	{
+		case GBP_RUMBLE_INIT:
+			tx_msg = 0x494E;
+			player_rumble.current_state = GBP_RUMBLE_STRINGS;
 
-		//Turn rumble off
-		else { mem->g_pad->stop_rumble(); }
+			break;
+
+		case GBP_RUMBLE_STRINGS:
+			tx_msg = (rx_msg << 16) | (rx_msg >> 16);
+
+			if((rx_msg >> 16) == 0x8000)
+			{
+				tx_msg |= 0x02;
+				player_rumble.current_state = GBP_RUMBLE_ECHO;
+			}
+
+			break;
+
+		case GBP_RUMBLE_ECHO:
+			tx_msg = rx_msg;
+
+			if((rx_msg >> 16) == 0x4000)
+			{
+				tx_msg = 0x30000003;
+				player_rumble.current_state = GBP_RUMBLE_STATUS;
+				player_rumble.data_count = 0;
+			}
+
+			break;
+
+		case GBP_RUMBLE_STATUS:
+			tx_msg = 0x30000003;
+			player_rumble.data_count++;
+
+			if(player_rumble.data_count == 5)
+			{
+				tx_msg = 0x494E;
+			}
+
+			//Set rumble status
+			if(rx_msg == 0x40000026) { mem->g_pad->start_rumble(); }
+			else {  mem->g_pad->stop_rumble(); }
+
+			break;
 	}
 
 	//Send data to GBA
-	mem->write_u32_fast(SIO_DATA_32_L, player_rumble.sio_buffer[player_rumble.buffer_index++]);
+	mem->write_u32_fast(SIO_DATA_32_L, tx_msg);
 
 	//Raise SIO IRQ after sending byte
 	if(sio_stat.cnt & 0x4000) { mem->memory_map[REG_IF] |= 0x80; }
 
-	if(player_rumble.buffer_index == 18)
-	{
-		player_rumble.buffer_index = 0;
-		sio_stat.emu_device_ready = false;
-	}
-
-	else
-	{
-		sio_stat.shifts_left = 32;
-		sio_stat.shift_counter = 0;
-	}
-
-	sio_stat.active_transfer = false;
+	//Reset timeout counter
+	mem->g_pad->gb_player_timeout = 0;
 }
 
 /****** Resets Soul Doll Adapter ******/
@@ -1292,26 +1404,45 @@ void AGB_SIO::net_gate_process()
 
 	if(network_init && config::use_netplay && !sio_stat.connected)
 	{
+		std::vector<u8> recv_data;
+
 		//Loop for a while to see if a connection will accept
 		for(u32 x = 0; x < 100; x++)
 		{
 			//Check remote socket for any connections
 			if(server.remote_socket = SDLNet_TCP_Accept(server.host_socket))
 			{
-				u8 temp_buffer[3] = {0, 0, 0};
+				u8 temp_buffer[1024];
+				u32 recv_bytes = SDLNet_TCP_Recv(server.remote_socket, temp_buffer, 1024);
 
-				//Net Gate protocol is 1-shot, no response, 3 bytes
-				if(SDLNet_TCP_Recv(server.remote_socket, temp_buffer, 3) > 0)
+				//Net Gate protocol is HTTP POST, 4-byte payload (unsigned 32-bit value, MSB first)
+				if(recv_bytes > 0)
 				{
-					//Set Battle Chip ID from network data
-					if(temp_buffer[0] == 0x80)
+					//Generate and send HTTP response
+					std::string http_str = "HTTP/1.1 200 OK\r\n";
+					http_str += "Access-Control-Allow-Origin: *\r\n\r\n";
+
+					std::vector <u8> http_data;
+					http_data.resize(http_str.length());
+					util::str_to_data(http_data.data(), http_str);
+
+					u32 send_bytes = SDLNet_TCP_Send(server.remote_socket, (void*)http_data.data(), http_data.size());
+					SDLNet_TCP_Close(server.remote_socket);
+
+					//Find end of header + payload data
+					std::string raw_str = util::data_to_str(temp_buffer, 1024);
+					std::size_t header_match = raw_str.find("\r\n\r\n");
+					u32 pos = header_match + 4;
+
+					if((header_match != std::string::npos) && (pos <= 1019))
 					{
-						config::battle_chip_id = (temp_buffer[1] << 8) | temp_buffer[2];
+						u32 id = (temp_buffer[pos] << 24) | (temp_buffer[pos + 1] << 16) | (temp_buffer[pos + 2] << 8) | temp_buffer[pos + 3];
+						config::battle_chip_id = (id & 0xFFFF);
 						chip_gate.net_gate_count = 1024;
 					}
 				}
 
-				x = 100;
+				break;
 			}
 		}
 	}
@@ -1832,7 +1963,7 @@ void AGB_SIO::ir_adapter_process()
 		sio_stat.active_transfer = false;
 
 		//Process Zoid commands if IR device is CDZ model
-		if((config::ir_device == 6) && (cdz_e.active)) { zoids_cdz_process(); }
+		if((config::ir_device == IR_ZOIDS) && (cdz_e.active)) { zoids_cdz_process(); }
 		
 		//Clear IR delay data
 		ir_adapter.delay_data.clear();

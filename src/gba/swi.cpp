@@ -51,6 +51,8 @@ s16 sine_lut[256] =
 /****** Process Software Interrupts ******/
 void ARM7::process_swi(u32 comment)
 {
+	bios_read_state = BIOS_SWI_FINISH;
+
 	//Emulate SWI using actual GBA BIOS
 	if(config::use_bios)
 	{
@@ -215,17 +217,20 @@ void ARM7::process_swi(u32 comment)
 
 		//Diff8bitUnFilterWram
 		case 0x16:
-			std::cout<<"SWI::Diff8bitUnFilterWram (not implemented yet) \n";
+			std::cout<<"SWI::Diff8bitUnFilterWram \n";
+			swi_diff8unfilter(false);
 			break;
 
 		//Diff8bitUnFilterVram
 		case 0x17:
-			std::cout<<"SWI::Diff8bitUnFilterVram (not implemented yet) \n";
+			std::cout<<"SWI::Diff8bitUnFilterVram \n";
+			swi_diff8unfilter(true);
 			break;
 
 		//Diff16bitUnFilter
 		case 0x18:
-			std::cout<<"SWI::Diff16bitUnFilter (not implemented yet) \n";
+			std::cout<<"SWI::Diff16bitUnFilter \n";
+			swi_diff16unfilter();
 			break;
 
 		//SoundBias
@@ -330,8 +335,6 @@ void ARM7::process_swi(u32 comment)
 /****** HLE implementation of SoftReset ******/
 void ARM7::swi_softreset()
 {
-	bios_read_state = BIOS_SWI_FINISH;
-
 	//Reset IRQ, SVC, and SYS stack pointers
 	reg.r13_svc = 0x03007FE0;
 	reg.r13_irq = 0x03007FA0;
@@ -372,8 +375,6 @@ void ARM7::swi_softreset()
 /****** HLE implementation of RegisterRAMReset ******/
 void ARM7::swi_registerramreset()
 {
-	bios_read_state = BIOS_SWI_FINISH;
-
 	//Grab reset flags - R0
 	u8 reset_flags = (get_reg(0) & 0xFF);
 	u32 x = 0;
@@ -438,8 +439,6 @@ void ARM7::swi_registerramreset()
 /****** HLE implementation of Halt ******/
 void ARM7::swi_halt()
 {
-	bios_read_state = BIOS_SWI_FINISH;
-
 	u16 if_check, ie_check = 0; 
 	bool halt = true;
 
@@ -463,7 +462,6 @@ void ARM7::swi_halt()
 /****** HLE implementation of Sleep ******/
 void ARM7::swi_sleep()
 {
-	bios_read_state = BIOS_SWI_FINISH;
 	sleep = true;
 	running = false;
 }
@@ -471,8 +469,6 @@ void ARM7::swi_sleep()
 /****** HLE implementation of Div ******/
 void ARM7::swi_div()
 {
-	bios_read_state = BIOS_SWI_FINISH;
-
 	//Grab the numerator - R0
 	s32 num = get_reg(0);
 	
@@ -501,8 +497,6 @@ void ARM7::swi_div()
 /****** HLE implementation of DivARM ******/
 void ARM7::swi_divarm()
 {
-	bios_read_state = BIOS_SWI_FINISH;
-
 	//Grab the numerator - R1
 	s32 num = get_reg(1);
 	
@@ -531,8 +525,6 @@ void ARM7::swi_divarm()
 /****** HLE implementation of Sqrt ******/
 void ARM7::swi_sqrt()
 {
-	bios_read_state = BIOS_SWI_FINISH;
-
 	//Grab input
 	u32 input = get_reg(0);
 
@@ -544,8 +536,6 @@ void ARM7::swi_sqrt()
 /****** HLE implementation of ArcTan ******/
 void ARM7::swi_arctan()
 {
-	bios_read_state = BIOS_SWI_FINISH;
-
 	//Grab the tangent - R0
 	s32 tan = get_reg(0);
 
@@ -566,8 +556,6 @@ void ARM7::swi_arctan()
 /****** HLE implementation of ArcTan2 ******/
 void ARM7::swi_arctan2()
 {
-	bios_read_state = BIOS_SWI_FINISH;
-
 	//Grab X - R0
 	s32 x = get_reg(0);
 
@@ -615,8 +603,6 @@ void ARM7::swi_arctan2()
 /****** HLE implementation of CPUFastSet ******/
 void ARM7::swi_cpufastset()
 {
-	bios_read_state = BIOS_SWI_FINISH;
-
 	//Grab source address - R0
 	u32 src_addr = get_reg(0);
 
@@ -679,8 +665,6 @@ void ARM7::swi_cpufastset()
 /****** HLE implementation of CPUSet ******/
 void ARM7::swi_cpuset()
 {
-	bios_read_state = BIOS_SWI_FINISH;
-
 	//Grab source address - R0
 	u32 src_addr = get_reg(0);
 
@@ -814,8 +798,6 @@ void ARM7::swi_intrwait()
 /****** HLE implementation of VBlankIntrWait ******/
 void ARM7::swi_vblankintrwait()
 {
-	bios_read_state = BIOS_SWI_FINISH;
-
 	swi_vblank_wait = true;
 
 	//Set R0 and R1 to 1
@@ -863,8 +845,6 @@ void ARM7::swi_vblankintrwait()
 /****** HLE implementation of BitUnPack ******/
 void ARM7::swi_bitunpack()
 {
-	bios_read_state = BIOS_SWI_FINISH;
-
 	//Grab source address - R0
 	u32 src_addr = get_reg(0);
 
@@ -948,8 +928,6 @@ void ARM7::swi_bitunpack()
 /****** HLE implementation of LZ77UnCompVram ******/
 void ARM7::swi_lz77uncompvram()
 {
-	bios_read_state = BIOS_SWI_FINISH;
-
 	//Grab source address - R0
 	u32 src_addr = get_reg(0);
 
@@ -1019,8 +997,6 @@ void ARM7::swi_lz77uncompvram()
 /****** HLE implementation of HuffUnComp ******/
 void ARM7::swi_huffuncomp()
 {
-	bios_read_state = BIOS_SWI_FINISH;
-
 	//Grab source address - R0
 	u32 src_addr = get_reg(0);
 
@@ -1078,7 +1054,7 @@ void ARM7::swi_huffuncomp()
 				//Grab data from the node
 				u8 data = 0;
 
-				if(data_size == 4) { data = node & 0xF; }
+				if(bit_size == 4) { data = node & 0xF; }
 				else { data = node; }
 
 				//Add data to 32-bit value
@@ -1142,8 +1118,6 @@ void ARM7::swi_huffuncomp()
 /****** HLE implementation of RLUnCompVram ******/
 void ARM7::swi_rluncompvram()
 {
-	bios_read_state = BIOS_SWI_FINISH;
-
 	//Grab source address - R0
 	u32 src_addr = get_reg(0);
 
@@ -1189,13 +1163,69 @@ void ARM7::swi_rluncompvram()
 		//Manually adjust data pointer for compressed data to point to next flag
 		if(flag & 0x80) { data_ptr++; }
 	}
-}		
+}
+
+/****** HLE implementation of Diff8bitUnFilter******/
+void ARM7::swi_diff8unfilter(bool is_vram_version)
+{
+	//Grab source address - R0
+	u32 src_addr = get_reg(0);
+
+	//Grab destination address - R1
+	u32 dest_addr = get_reg(1);
+
+	//Grab data header
+	u32 data_header = mem->read_u32(src_addr);
+	src_addr += 4;
+
+	u32 data_size = (data_header >> 8);
+	u16 diff_data = 0;
+
+	if(is_vram_version)
+	{
+		for(u32 x = 0; x < data_size; x += 2)
+		{
+			diff_data += mem->read_u8(src_addr++);
+			mem->write_u16((dest_addr + x), diff_data);
+		}
+	}
+
+	else
+	{
+		for(u32 x = 0; x < data_size; x++)
+		{
+			diff_data += mem->read_u8(src_addr++);
+			mem->write_u8(dest_addr++, diff_data);
+		}
+	}
+}
+
+/****** HLE implementation of Diff16bitUnFilter******/
+void ARM7::swi_diff16unfilter()
+{
+	//Grab source address - R0
+	u32 src_addr = get_reg(0);
+
+	//Grab destination address - R1
+	u32 dest_addr = get_reg(1);
+
+	//Grab data header
+	u32 data_header = mem->read_u32(src_addr);
+	src_addr += 4;
+
+	u32 data_size = (data_header >> 8);
+	u16 diff_data = 0;
+
+	for(u32 x = 0; x < data_size; x += 2)
+	{
+		diff_data += mem->read_u16(src_addr + x);
+		mem->write_u16((dest_addr + x), diff_data);
+	}
+}
 	
 /****** HLE implementation of GetBIOSChecksum ******/
 void ARM7::swi_getbioschecksum()
 {
-	bios_read_state = BIOS_SWI_FINISH;
-
 	//Return checksum in R0
 	set_reg(0, 0xBAAE187F);
 }
@@ -1203,8 +1233,6 @@ void ARM7::swi_getbioschecksum()
 /****** HLE implementation of BGAffineSet ******/
 void ARM7::swi_bgaffineset()
 {
-	bios_read_state = BIOS_SWI_FINISH;
-
 	//Grab source data field address - R0
 	u32 src_addr = get_reg(0);
 
@@ -1260,8 +1288,6 @@ void ARM7::swi_bgaffineset()
 /****** HLE implementation of OBJAffineSet ******/
 void ARM7::swi_objaffineset()
 {
-	bios_read_state = BIOS_SWI_FINISH;
-
 	//Grab source data field address - R0
 	u32 src_addr = get_reg(0);
 
@@ -1305,8 +1331,6 @@ void ARM7::swi_objaffineset()
 /****** HLE implementation of SoundChannelClear ******/
 void ARM7::swi_soundchannelclear()
 {
-	bios_read_state = BIOS_SWI_FINISH;
-
 	//Reset DMA channel data
 	for(int x = 0; x < 2; x++)
 	{
@@ -1329,8 +1353,6 @@ void ARM7::swi_soundchannelclear()
 /****** HLE implementation of MidiKey2Freq ******/
 void ARM7::swi_midikey2freq()
 {
-	bios_read_state = BIOS_SWI_FINISH;
-
 	//Grab input frequency
 	u32 frequency = mem->read_u32(get_reg(0) + 4);
 

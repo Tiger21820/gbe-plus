@@ -30,6 +30,11 @@ DMG_GamePad::DMG_GamePad()
 	ddr_was_mapped = false;
 	sensor_init = false;
 	gc_sensor = NULL;
+	vaus_adc = 0x0030;
+	vaus_magnitude = 0;
+	axis_magnitude = 0;
+	workboy_key = 0;
+	workboy_lock_keyboard = false;
 
 	//Swap inputs when using DDR Finger Pad mode
 	if(config::use_ddr_mapping)
@@ -199,8 +204,16 @@ void DMG_GamePad::handle_input(SDL_Event &event)
 		if(axis_pos > 0) { pad++; }
 		else { axis_pos *= -1; }
 
-		if(axis_pos > config::dead_zone) { process_joystick(pad, true); }
-		else { process_joystick(pad, false); }
+		if(axis_pos > config::dead_zone)
+		{
+			process_joystick(pad, true);
+			axis_magnitude = axis_pos;
+		}
+
+		else
+		{
+			process_joystick(pad, false);
+		}
 	}
 
 	//Joystick hats
@@ -284,6 +297,13 @@ void DMG_GamePad::handle_input(SDL_Event &event)
 /****** Processes input based on unique pad # for keyboards ******/
 void DMG_GamePad::process_keyboard(int pad, bool pressed)
 {
+	//Forward input to WorkBoy if applicable
+	if(config::sio_device == SIO_WORKBOY)
+	{
+		process_workboy_keys(pad, pressed);
+		if(workboy_lock_keyboard) { return; }
+	}
+
 	//Emulate A button press
 	if((pad == config::gbe_key_a) && (pressed)) { p14 &= ~0x1; }
 
@@ -433,7 +453,7 @@ void DMG_GamePad::process_keyboard(int pad, bool pressed)
 		con_flags &= ~0x8;
 
 		//Reset constant IR light source
-		if((config::ir_device == 5) && (ir_delay == 0)) { ir_delay = 10; }
+		if((config::ir_device == IR_CONSTANT_LIGHT) && (ir_delay == 0)) { ir_delay = 10; }
 	}
 
 	//Emulate Gyroscope Up tilt release
@@ -484,23 +504,23 @@ void DMG_GamePad::process_keyboard(int pad, bool pressed)
 	}
 
 	//Emulate R Trigger press - DMG/GBC on GBA or sewing machine ONLY
-	else if((pad == config::gbe_key_r_trigger) && (pressed) && (config::gba_enhance || (config::sio_device == 14)))
+	else if((pad == config::gbe_key_r_trigger) && (pressed) && (config::gba_enhance || (config::sio_device == SIO_SEWING_MACHINE)))
 	{
 		config::request_resize = true;
 		config::resize_mode--;
 		
 		if(config::resize_mode < 0) { config::resize_mode = 0; }
-		if(config::sio_device == 14) { config::resize_mode = 0; }
+		if(config::sio_device == SIO_SEWING_MACHINE) { config::resize_mode = 0; }
 	}
 
 	//Emulate L Trigger press - DMG/GBC on GBA or sewing machine ONLY
-	else if((pad == config::gbe_key_l_trigger) && (pressed) && (config::gba_enhance || (config::sio_device == 14)))
+	else if((pad == config::gbe_key_l_trigger) && (pressed) && (config::gba_enhance || (config::sio_device == SIO_SEWING_MACHINE)))
 	{
 		config::request_resize = true;
 		config::resize_mode++;
 
 		if(config::resize_mode > 2) { config::resize_mode = 2; }
-		if(config::sio_device == 14) { config::resize_mode = 3; }
+		if(config::sio_device == SIO_SEWING_MACHINE) { config::resize_mode = 3; }
 	}
 
 	//Misc Context Key 1 press
@@ -585,6 +605,7 @@ void DMG_GamePad::process_joystick(int pad, bool pressed)
 
 	//Emulate Gyroscope Left tilt press
 	//Shift sewing point left
+	//Vaus Controller left
 	else if((pad == config::con_joy_left) && (pressed))
 	{
 		gyro_flags |= 0x1;
@@ -592,18 +613,30 @@ void DMG_GamePad::process_joystick(int pad, bool pressed)
 
 		con_flags |= 0x1;
 		con_flags &= ~0x2;
+
+		if(config::sio_device == SIO_VAUS_CONTROLLER)
+		{
+			vaus_magnitude = axis_magnitude;
+		}
 	}
 
 	//Emulate Gyroscope Left tilt release
 	//Shift sewing point left
+	//Vaus Controller center
 	else if((pad == config::con_joy_left) && (!pressed))
 	{
 		gyro_flags &= ~0x1;
 		con_flags &= ~0x1;
+
+		if(config::sio_device == SIO_VAUS_CONTROLLER)
+		{
+			vaus_magnitude = 0;
+		}
 	}
 
 	//Emulate Gyroscope Right tilt press
 	//Shift sewing point right
+	//Vaus Controller right
 	else if((pad == config::con_joy_right) && (pressed))
 	{
 		gyro_flags |= 0x2;
@@ -611,14 +644,25 @@ void DMG_GamePad::process_joystick(int pad, bool pressed)
 
 		con_flags |= 0x2;
 		con_flags &= ~0x1;
+
+		if(config::sio_device == SIO_VAUS_CONTROLLER)
+		{
+			vaus_magnitude = axis_magnitude;
+		}
 	}
 
 	//Emulate Gyroscope Right tilt release
 	//Shift sewing point right
+	//Vaus Controller center
 	else if((pad == config::con_joy_right) && (!pressed))
 	{
 		gyro_flags &= ~0x2;
 		con_flags &= ~0x2;
+
+		if(config::sio_device == SIO_VAUS_CONTROLLER)
+		{
+			vaus_magnitude = 0;
+		}
 	}
 
 	//Emulate Gyroscope Up tilt press
@@ -632,7 +676,7 @@ void DMG_GamePad::process_joystick(int pad, bool pressed)
 		con_flags &= ~0x8;
 
 		//Reset constant IR light source
-		if((config::ir_device == 5) && (ir_delay == 0)) { ir_delay = 10; }
+		if((config::ir_device == IR_CONSTANT_LIGHT) && (ir_delay == 0)) { ir_delay = 10; }
 	}
 
 	//Emulate Gyroscope Up tilt release
@@ -663,30 +707,38 @@ void DMG_GamePad::process_joystick(int pad, bool pressed)
 	}
 
 	//Emulate R Trigger press - DMG/GBC on GBA or sewing machine ONLY
-	else if((pad == config::gbe_joy_r_trigger) && (pressed) && (config::gba_enhance || (config::sio_device == 14)))
+	else if((pad == config::gbe_joy_r_trigger) && (pressed) && (config::gba_enhance || (config::sio_device == SIO_SEWING_MACHINE)))
 	{
 		config::request_resize = true;
 		config::resize_mode--;
 		
 		if(config::resize_mode < 0) { config::resize_mode = 0; }
-		if(config::sio_device == 14) { config::resize_mode = 0; }
+		if(config::sio_device == SIO_SEWING_MACHINE) { config::resize_mode = 0; }
 	}
 
 	//Emulate L Trigger press - DMG/GBC on GBA or sewing machine ONLY
-	else if((pad == config::gbe_joy_l_trigger) && (pressed) && (config::gba_enhance || (config::sio_device == 14)))
+	else if((pad == config::gbe_joy_l_trigger) && (pressed) && (config::gba_enhance || (config::sio_device == SIO_SEWING_MACHINE)))
 	{
 		config::request_resize = true;
 		config::resize_mode++;
 
 		if(config::resize_mode > 2) { config::resize_mode = 2; }
-		if(config::sio_device == 14) { config::resize_mode = 3; }
+		if(config::sio_device == SIO_SEWING_MACHINE) { config::resize_mode = 3; }
 	}
 
 	//Misc Context Key 1 press
-	else if((pad == config::con_joy_1) && (pressed)) { con_flags |= 0x100; }
+	else if((pad == config::con_joy_1) && (pressed))
+	{
+		con_flags |= 0x100;
+		vaus_adc |= 0x8000;
+	}
 	
 	//Misc Context Key 1 release
-	else if((pad == config::con_joy_1) && (!pressed)) { con_flags &= ~0x100; }
+	else if((pad == config::con_joy_1) && (!pressed))
+	{
+		con_flags &= ~0x100;
+		vaus_adc &= ~0x8000;
+	}
 
 	//Misc Context Key 2 press
 	else if((pad == config::con_joy_2) && (pressed)) { con_flags |= 0x200; }
@@ -882,6 +934,172 @@ void DMG_GamePad::process_turbo_buttons()
 			}
 		}
 	}	
+}
+
+/****** Processes Vaus input ******/
+void DMG_GamePad::process_vaus()
+{
+	u8 vaus_lo = 0x6B;
+
+	if(vaus_magnitude > 0)
+	{
+		float ratio = float(vaus_magnitude - config::dead_zone) / float(0x7FFF - config::dead_zone);
+		vaus_lo = (44 * ratio);
+
+		if(con_flags & 0x02) { vaus_lo = 0x6B + vaus_lo; }
+		else if(con_flags & 0x01) { vaus_lo = 0x6B - vaus_lo; }
+	}
+
+	vaus_adc &= 0xFF00;
+	vaus_adc |= vaus_lo;
+}
+
+/****** Processes WorkBoy keyboard input ******/
+void DMG_GamePad::process_workboy_keys(int pad, bool pressed)
+{
+	if(!pressed || !workboy_lock_keyboard)
+	{
+		workboy_key = 0;
+		return;
+	}
+
+	bool is_cap_on = (SDL_GetModState() & KMOD_CAPS);
+	bool is_shift_on = (SDL_GetModState() & KMOD_SHIFT);
+
+	switch(pad)
+	{
+		//1 - 9 -> Dedicated hotkeys to apps
+		//App Key 1 = No Caps Lock, ! Symbole = Caps Lock
+		case SDLK_1:
+			workboy_key = is_cap_on ? 0x18 : 0x01;
+			break;
+
+		//App Key 2 = No Caps Lock, @ Symbol = Caps Lock
+		case SDLK_2:
+			workboy_key = is_cap_on ? 0x35 : 0x02;
+			break;
+
+		//App Key 3 = No Caps Lock, # Symbol = Caps Lock
+		case SDLK_3:
+			workboy_key = is_cap_on ? 0x1B : 0x03;
+			break;
+
+		//App Key 4 = No Shift, $ Symbol = Shift On
+		case SDLK_4:
+			workboy_key = is_shift_on ? 0x1B : 0x04;
+			break;
+
+		case SDLK_5: workboy_key = 0x05; break;
+		case SDLK_6: workboy_key = 0x06; break;
+		case SDLK_7: workboy_key = 0x07; break;
+		
+		//App Key 8 = No Caps Lock, Asterisk = Caps Lock
+		case SDLK_8:
+			workboy_key = is_cap_on ? 0x1A : 0x08;
+			break;
+
+		//App Key 9 = No Caps Lock, Left Parantheses = Caps Lock
+		case SDLK_9:
+			workboy_key = is_cap_on ? 0x23 : 0x09;
+			break;
+
+		//Right Parantheses = Caps Lock
+		case SDLK_0:
+			workboy_key = is_cap_on ? 0x24 : 0x00;
+			break;
+
+		//These are 1:1 functionality on a real QWERTY keyboard
+		case SDLK_INSERT: workboy_key = 0x0C; break;
+		case SDLK_BACKSPACE: workboy_key = 0x0B; break;
+		case SDLK_ESCAPE: workboy_key = 0x0A; break;
+
+		case SDLK_LEFT: workboy_key = 0x10; break;
+		case SDLK_UP: workboy_key = 0x36; break;
+		case SDLK_DOWN: workboy_key = 0x37; break;
+		case SDLK_RIGHT: workboy_key = 0x38; break;
+
+		case SDLK_q: workboy_key = 0x11; break;
+		case SDLK_w: workboy_key = 0x12; break;
+		case SDLK_e: workboy_key = 0x13; break;
+		case SDLK_r: workboy_key = 0x14; break;
+		case SDLK_t: workboy_key = 0x15; break;
+		case SDLK_y: workboy_key = 0x16; break;
+		case SDLK_u: workboy_key = 0x17; break;
+		case SDLK_i: workboy_key = 0x18; break;
+		case SDLK_o: workboy_key = 0x19; break;
+		case SDLK_p: workboy_key = 0x1A; break;
+
+		case SDLK_a: workboy_key = 0x1C; break;
+		case SDLK_s: workboy_key = 0x1D; break;
+		case SDLK_d: workboy_key = 0x1E; break;
+		case SDLK_f: workboy_key = 0x1F; break;
+		case SDLK_g: workboy_key = 0x20; break;
+		case SDLK_h: workboy_key = 0x21; break;
+		case SDLK_j: workboy_key = 0x22; break;
+		case SDLK_k: workboy_key = 0x23; break;
+		case SDLK_l: workboy_key = 0x24; break;
+		case SDLK_SEMICOLON: workboy_key = 0x25; break;
+		case SDLK_RETURN: workboy_key = 0x26; break;
+
+		//Caps lock is special. Doesn't seem like a way to get lowercase letters from keyboard input
+		//This functionality is mixed with the WorkBoy's version of NumLock
+		//Allows for a lot of keys that need SHIFT modifiers on a real keyboard
+		case SDLK_CAPSLOCK:
+			workboy_key = is_cap_on ? 0x27 : 0x32;
+			break;
+
+		//These are 1:1 functionality on a real keyboard
+		case SDLK_z: workboy_key = 0x28; break;
+		case SDLK_x: workboy_key = 0x29; break;
+		case SDLK_c: workboy_key = 0x2A; break;
+		case SDLK_v: workboy_key = 0x2B; break;
+		case SDLK_b: workboy_key = 0x2C; break;
+		case SDLK_n: workboy_key = 0x2D; break;
+		case SDLK_m: workboy_key = 0x2E; break;
+		case SDLK_COMMA: workboy_key = 0x2F; break;
+		case SDLK_PERIOD: workboy_key = 0x30; break;
+		case SDLK_SLASH: workboy_key = 0x31; break;
+
+		//Single quote = no Shift Modifier, Double Quote = Shift Modifier applied
+		case SDLK_QUOTE:
+			workboy_key = is_shift_on ? 0x33 : 0x35;
+			break;
+
+		//Equals and Plus sign when Caps Lock + Shift
+		case SDLK_EQUALS:
+			if(is_cap_on && is_shift_on) { workboy_key = 0x1F; }
+			else { workboy_key = is_cap_on ? 0x2D : 0x00; }
+			break;
+
+		//Minus sign needs Caps Lock, unlike real QWERTY keyboard
+		case SDLK_MINUS:
+			workboy_key = is_cap_on ? 0x20 : 0x00;
+			break;
+
+		//These are 1:1 functionality on a real QWERTY keyboard
+		case SDLK_SPACE: workboy_key = 0x34; break;
+
+		//These are 1:1 functionality on a real QWERTY keyboard with dedicated keypad
+		case SDLK_KP_1: workboy_key = 0x11; break;
+		case SDLK_KP_2: workboy_key = 0x12; break;
+		case SDLK_KP_3: workboy_key = 0x13; break;
+		case SDLK_KP_4: workboy_key = 0x1C; break;
+		case SDLK_KP_5: workboy_key = 0x1D; break;
+		case SDLK_KP_6: workboy_key = 0x1E; break;
+		case SDLK_KP_7: workboy_key = 0x28; break;
+		case SDLK_KP_8: workboy_key = 0x29; break;
+		case SDLK_KP_9: workboy_key = 0x2A; break;
+		case SDLK_KP_0: workboy_key = 0x33; break;
+
+		case SDLK_KP_PLUS: workboy_key = 0x1F; break;
+		case SDLK_KP_MINUS: workboy_key = 0x20; break;
+		case SDLK_KP_MULTIPLY: workboy_key = 0x21; break;
+		case SDLK_KP_DIVIDE: workboy_key = 0x22; break;
+		case SDLK_KP_ENTER: workboy_key = 0x2D; break;
+		case SDLK_KP_PERIOD: workboy_key = 0x2B; break;
+
+		default: workboy_key = 0x00;
+	}
 }
 
 /****** Start haptic force-feedback on joypad ******/

@@ -86,7 +86,11 @@ void AGB_GamePad::init()
 
 		//Emulate GB Player detection if rumble is enabled
 		//Masks bits 4-7 of KEYINPUT until player gives input
-		if(config::sio_device == 8) { is_gb_player = true; }
+		if(config::sio_device == SIO_GB_PLAYER_RUMBLE)
+		{
+			is_gb_player = true;
+			gb_player_count = 0;
+		}
 	}
 
 	if(config::use_motion)
@@ -293,6 +297,8 @@ void AGB_GamePad::handle_input(SDL_Event &event)
 /****** Processes input based on unique pad # for keyboards ******/
 void AGB_GamePad::process_keyboard(int pad, bool pressed)
 {
+	u16 old_input = key_input;
+
 	//Emulate A button press
 	if((pad == config::gbe_key_a) && (pressed)) { key_input &= ~0x1; }
 
@@ -398,7 +404,10 @@ void AGB_GamePad::process_keyboard(int pad, bool pressed)
 		}
 
 		//Emulate Battle Chip insertion
-		else if((config::sio_device >= 10) && (config::sio_device <= 12)) { config::battle_chip_id = config::chip_list[0]; }
+		else if((config::sio_device >= SIO_BATTLE_CHIP_GATE) && (config::sio_device <= SIO_BEAST_LINK_GATE))
+		{
+			config::battle_chip_id = config::chip_list[0];
+		}
 
 		con_flags |= 0x1;
 		con_flags |= 0x10;
@@ -419,7 +428,10 @@ void AGB_GamePad::process_keyboard(int pad, bool pressed)
 		}
 
 		//Emulate Battle Chip extraction
-		else if((config::sio_device >= 10) && (config::sio_device <= 12)) { config::battle_chip_id = 0; }
+		else if((config::sio_device >= SIO_BATTLE_CHIP_GATE) && (config::sio_device <= SIO_BEAST_LINK_GATE))
+		{
+			config::battle_chip_id = 0;
+		}
 
 		con_flags &= ~0x1;
 		con_flags &= ~0x10;
@@ -444,7 +456,10 @@ void AGB_GamePad::process_keyboard(int pad, bool pressed)
 		}
 
 		//Emulate Battle Chip insertion
-		else if((config::sio_device >= 10) && (config::sio_device <= 12)) { config::battle_chip_id = config::chip_list[1]; }
+		else if((config::sio_device >= SIO_BATTLE_CHIP_GATE) && (config::sio_device <= SIO_BEAST_LINK_GATE))
+		{
+			config::battle_chip_id = config::chip_list[1];
+		}
 
 		con_flags |= 0x2;
 		con_flags |= 0x20;
@@ -465,7 +480,10 @@ void AGB_GamePad::process_keyboard(int pad, bool pressed)
 		}
 
 		//Emulate Battle Chip extraction
-		else if((config::sio_device >= 10) && (config::sio_device <= 12)) { config::battle_chip_id = 0; }
+		else if((config::sio_device >= SIO_BATTLE_CHIP_GATE) && (config::sio_device <= SIO_BEAST_LINK_GATE))
+		{
+			config::battle_chip_id = 0;
+		}
 
 		con_flags &= ~0x2;
 		con_flags &= ~0x20;
@@ -515,7 +533,10 @@ void AGB_GamePad::process_keyboard(int pad, bool pressed)
 		}
 
 		//Emulate Battle Chip insertion
-		else if((config::sio_device >= 10) && (config::sio_device <= 12)) { config::battle_chip_id = config::chip_list[2]; }
+		else if((config::sio_device >= SIO_BATTLE_CHIP_GATE) && (config::sio_device <= SIO_BEAST_LINK_GATE))
+		{
+			config::battle_chip_id = config::chip_list[2];
+		}
 
 		con_flags |= 0x4;
 		con_flags |= 0x40;
@@ -536,7 +557,10 @@ void AGB_GamePad::process_keyboard(int pad, bool pressed)
 		}
 
 		//Emulate Battle Chip extraction
-		else if((config::sio_device >= 10) && (config::sio_device <= 12)) { config::battle_chip_id = 0; }
+		else if((config::sio_device >= SIO_BATTLE_CHIP_GATE) && (config::sio_device <= SIO_BEAST_LINK_GATE))
+		{
+			config::battle_chip_id = 0;
+		}
 
 		con_flags &= ~0x4;
 		con_flags &= ~0x40;
@@ -586,7 +610,10 @@ void AGB_GamePad::process_keyboard(int pad, bool pressed)
 		}
 
 		//Emulate Battle Chip insertion
-		else if((config::sio_device >= 10) && (config::sio_device <= 12)) { config::battle_chip_id = config::chip_list[3]; }
+		else if((config::sio_device >= SIO_BATTLE_CHIP_GATE) && (config::sio_device <= SIO_BEAST_LINK_GATE))
+		{
+			config::battle_chip_id = config::chip_list[3];
+		}
 
 		con_flags |= 0x8;
 		con_flags |= 0x80;
@@ -607,7 +634,10 @@ void AGB_GamePad::process_keyboard(int pad, bool pressed)
 		}
 
 		//Emulate Battle Chip extraction
-		else if((config::sio_device >= 10) && (config::sio_device <= 12)) { config::battle_chip_id = 0; }
+		else if((config::sio_device >= SIO_BATTLE_CHIP_GATE) && (config::sio_device <= SIO_BEAST_LINK_GATE))
+		{
+			config::battle_chip_id = 0;
+		}
 
 		con_flags &= ~0x8;
 		con_flags &= ~0x80;
@@ -628,7 +658,13 @@ void AGB_GamePad::process_keyboard(int pad, bool pressed)
 	//Misc Context Key 2 release
 	else if((pad == config::con_key_2) && (!pressed)) { con_flags &= ~0x200; }
 
-	is_gb_player = false;
+	//Disable GB Player detection when user presses any input
+	if((is_gb_player) && (key_input != old_input))
+	{
+		is_gb_player = false;
+		config::osd_message = "GBP DETECTION OFF";
+		config::osd_count = 180;
+	}
 
 	//Terminate Turbo Buttons
 	if(turbo_button_enabled)
@@ -649,6 +685,8 @@ void AGB_GamePad::process_keyboard(int pad, bool pressed)
 /****** Processes input based on unique pad # for joysticks ******/
 void AGB_GamePad::process_joystick(int pad, bool pressed)
 {
+	u16 old_input = key_input;
+
 	//Emulate A button press
 	if((pad == config::gbe_joy_a) && (pressed)) { key_input &= ~0x1; }
 
@@ -724,7 +762,10 @@ void AGB_GamePad::process_joystick(int pad, bool pressed)
 		}
 
 		//Emulate Battle Chip insertion
-		else if((config::sio_device >= 10) && (config::sio_device <= 12)) { config::battle_chip_id = config::chip_list[0]; }
+		else if((config::sio_device >= SIO_BATTLE_CHIP_GATE) && (config::sio_device <= SIO_BEAST_LINK_GATE))
+		{
+			config::battle_chip_id = config::chip_list[0];
+		}
 
 		con_flags |= 0x1;
 		con_flags &= ~0x2;
@@ -744,7 +785,10 @@ void AGB_GamePad::process_joystick(int pad, bool pressed)
 		}
 
 		//Emulate Battle Chip extraction
-		else if((config::sio_device >= 10) && (config::sio_device <= 12)) { config::battle_chip_id = 0; }
+		else if((config::sio_device >= SIO_BATTLE_CHIP_GATE) && (config::sio_device <= SIO_BEAST_LINK_GATE))
+		{
+			config::battle_chip_id = 0;
+		}
 
 		con_flags &= ~0x1;
 	}
@@ -764,7 +808,10 @@ void AGB_GamePad::process_joystick(int pad, bool pressed)
 		}
 
 		//Emulate Battle Chip insertion
-		else if((config::sio_device >= 10) && (config::sio_device <= 12)) { config::battle_chip_id = config::chip_list[1]; }
+		else if((config::sio_device >= SIO_BATTLE_CHIP_GATE) && (config::sio_device <= SIO_BEAST_LINK_GATE))
+		{
+			config::battle_chip_id = config::chip_list[1];
+		}
 
 		con_flags |= 0x2;
 		con_flags &= ~0x1;
@@ -784,7 +831,10 @@ void AGB_GamePad::process_joystick(int pad, bool pressed)
 		}
 
 		//Emulate Battle Chip extraction
-		else if((config::sio_device >= 10) && (config::sio_device <= 12)) { config::battle_chip_id = 0; }
+		else if((config::sio_device >= SIO_BATTLE_CHIP_GATE) && (config::sio_device <= SIO_BEAST_LINK_GATE))
+		{
+			config::battle_chip_id = 0;
+		}
 
 		con_flags &= ~0x2;
 	}
@@ -830,7 +880,10 @@ void AGB_GamePad::process_joystick(int pad, bool pressed)
 		}
 
 		//Emulate Battle Chip insertion
-		else if((config::sio_device >= 10) && (config::sio_device <= 12)) { config::battle_chip_id = config::chip_list[2]; }
+		else if((config::sio_device >= SIO_BATTLE_CHIP_GATE) && (config::sio_device <= SIO_BEAST_LINK_GATE))
+		{
+			config::battle_chip_id = config::chip_list[2];
+		}
 
 		con_flags |= 0x4;
 		con_flags &= ~0x8;
@@ -850,7 +903,10 @@ void AGB_GamePad::process_joystick(int pad, bool pressed)
 		}
 
 		//Emulate Battle Chip extraction
-		else if((config::sio_device >= 10) && (config::sio_device <= 12)) { config::battle_chip_id = 0; }
+		else if((config::sio_device >= SIO_BATTLE_CHIP_GATE) && (config::sio_device <= SIO_BEAST_LINK_GATE))
+		{
+			config::battle_chip_id = 0;
+		}
 
 		con_flags &= ~0x4;
 	}
@@ -896,7 +952,10 @@ void AGB_GamePad::process_joystick(int pad, bool pressed)
 		}
 
 		//Emulate Battle Chip insertion
-		else if((config::sio_device >= 10) && (config::sio_device <= 12)) { config::battle_chip_id = config::chip_list[3]; }
+		else if((config::sio_device >= SIO_BATTLE_CHIP_GATE) && (config::sio_device <= SIO_BEAST_LINK_GATE))
+		{
+			config::battle_chip_id = config::chip_list[3];
+		}
 
 		con_flags |= 0x8;
 		con_flags &= ~0x4;
@@ -916,7 +975,10 @@ void AGB_GamePad::process_joystick(int pad, bool pressed)
 		}
 
 		//Emulate Battle Chip extraction
-		else if((config::sio_device >= 10) && (config::sio_device <= 12)) { config::battle_chip_id = 0; }
+		else if((config::sio_device >= SIO_BATTLE_CHIP_GATE) && (config::sio_device <= SIO_BEAST_LINK_GATE))
+		{
+			config::battle_chip_id = 0;
+		}
 
 		con_flags &= ~0x8;
 	}
@@ -933,7 +995,13 @@ void AGB_GamePad::process_joystick(int pad, bool pressed)
 	//Misc Context Key 2 release
 	else if((pad == config::con_joy_2) && (!pressed)) { con_flags &= ~0x200; }
 
-	is_gb_player = false;
+	//Disable GB Player detection when user presses any input
+	if((is_gb_player) && (key_input != old_input))
+	{
+		is_gb_player = false;
+		config::osd_message = "GBP DETECTION OFF";
+		config::osd_count = 180;
+	}
 
 	//Terminate Turbo Buttons
 	if(turbo_button_enabled)
@@ -1188,4 +1256,21 @@ void AGB_GamePad::process_turbo_buttons()
 			}
 		}
 	}	
+}
+
+/****** Process alternating inputs to trigger GB Rumble ******/
+void AGB_GamePad::process_gb_rumble()
+{
+	gb_player_count++;
+
+	if(gb_player_count == 0x03)
+	{
+		key_input = 0x30F;
+		gb_player_count = 0;	
+	}
+
+	else
+	{
+		key_input = 0x3FF;
+	}
 }

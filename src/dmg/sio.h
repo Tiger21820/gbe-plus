@@ -213,6 +213,23 @@ class DMG_SIO
 		bool sync_2;
 	} turbo_file;
 
+	//Vaus Controller
+	struct gb_vaus_controller
+	{
+		u8 counter;
+	} vaus_controller;
+
+	//WorkBoy
+	struct gb_workboy
+	{
+		u8 data_out;
+		u8 last_key;
+		u8 rtc_data[42];
+		u8 rtc_index;
+		workboy_state state;
+		bool is_caps_lock_on;
+	} workboy;
+
 	//Full Changer
 	struct gb_full_changer
 	{
@@ -309,6 +326,10 @@ class DMG_SIO
 	void singer_izek_update();
 	bool singer_izek_calculate_coordinates();
 	u8 singer_izek_adjust_y(u8 y_val);
+
+	void vaus_controller_process();
+	void workboy_process();
+	void workboy_get_time();
 
 	void full_changer_process();
 	bool full_changer_load_db(std::string filename);

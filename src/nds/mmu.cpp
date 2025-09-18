@@ -45,28 +45,45 @@ void NTR_MMU::reset()
 			current_slot1_device = SLOT1_NTR_031;
 
 			//Setup NTR-027
-			if(config::ir_device == 7) { setup_ntr_027(); }
+			if(config::ir_device == IR_ACTIVITY_METER) { setup_ntr_027(); }
 
 			break;
 	}
 
 	switch(config::nds_slot2_device)
 	{
-		case 0: current_slot2_device = SLOT2_AUTO; break;
-		case 1: current_slot2_device = SLOT2_NONE; break;
-		case 2: current_slot2_device = SLOT2_PASSME; break;
-		case 3: current_slot2_device = SLOT2_RUMBLE_PAK; break;
-		case 4: current_slot2_device = SLOT2_GBA_CART; break;
-		case 5: current_slot2_device = SLOT2_UBISOFT_PEDOMETER; break;
+		case NTR_S2_AUTO:
+			current_slot2_device = SLOT2_AUTO;
+			break;
 
-		case 6:
+		case NTR_S2_NONE:
+			current_slot2_device = SLOT2_NONE;
+			break;
+
+		case NTR_S2_PASSME:
+			current_slot2_device = SLOT2_PASSME;
+			break;
+
+		case NTR_S2_RUMBLE_PAK:
+			current_slot2_device = SLOT2_RUMBLE_PAK;
+			break;
+
+		case NTR_S2_GBA_CART:
+			current_slot2_device = SLOT2_GBA_CART;
+			break;
+
+		case NTR_S2_THRUSTMASTER:
+			current_slot2_device = SLOT2_UBISOFT_PEDOMETER;
+			break;
+
+		case NTR_S2_HCV_1000:
 			current_slot2_device = SLOT2_HCV_1000;
 			hcv.data.clear();
 			hcv.data.resize(0x10, 0x5F);
 			slot2_hcv_load_barcode(config::external_card_file);
 			break;
 
-		case 7:
+		case NTR_S2_MAGIC_READER:
 			current_slot2_device = SLOT2_MAGIC_READER;
 			magic_reader.command = 0;
 			magic_reader.in_data = 0;
@@ -80,14 +97,16 @@ void NTR_MMU::reset()
 			magic_reader.oid_reset = true;
 			break;
 
-		case 8:
+		case NTR_S2_MEMORY_EXPANSION:
 			current_slot2_device = SLOT2_MEMORY_EXPANSION;
 			mem_pak.data.clear();
 			mem_pak.data.resize(0x800000, 0xFF);
 			mem_pak.is_locked = true;
 			break;
 
-		case 9: current_slot2_device = SLOT2_MOTION_PACK; break;
+		case NTR_S2_MOTION_PACK:
+			current_slot2_device = SLOT2_MOTION_PACK;
+			break;
 	}	
 
 	memory_map.clear();
@@ -182,7 +201,7 @@ void NTR_MMU::reset()
 	firmware_state = 0;
 	firmware_index = 0;
 
-	//Setup NDS_DMA info
+	//Setup NDS DMA info
 	for(int x = 0; x < 8; x++)
 	{
 		dma[x].enable = false;
@@ -197,6 +216,14 @@ void NTR_MMU::reset()
 		dma[x].dest_addr_ctrl = 0;
 		dma[x].src_addr_ctrl = 0;
 		dma[x].delay = 0;
+	}
+
+	//Setup NDS Sound Capture info
+	for(int x = 0; x < 2; x++)
+	{
+		sound_cap[x].cnt = 0;
+		sound_cap[x].destination_address = 0;
+		sound_cap[x].length = 0;
 	}
 
 	//Clear IPC FIFO if necessary
@@ -413,10 +440,48 @@ u8 NTR_MMU::read_u8(u32 address)
 			break;
 
 		case 0x4:
-			if((!access_mode) && (address >= 0x4000400) && (address < 0x4000500))
+			//Access Sound Channel Registers
+			if((address >= 0x4000400) && (address < 0x4000500))
 			{
+				if(access_mode) { return 0; }
+
 				apu_io_id = (address >> 4) & 0xF;
-				address &= 0x400040F;
+				u8 shift_32 = (address & 0x3) << 3;
+				u8 shift_16 = (address & 0x1) << 3;
+				
+				switch(address & 0x0F)
+				{
+					//Control Register
+					case 0x00:
+					case 0x01:
+					case 0x02:
+					case 0x03:
+						return ((apu_stat->channel[apu_io_id].cnt >> shift_32) & 0xFF);
+
+					//Source Address
+					case 0x04:
+					case 0x05:
+					case 0x06:
+					case 0x07:
+						return ((apu_stat->channel[apu_io_id].data_src >> shift_32) & 0xFF);
+
+					//Timer
+					case 0x08:
+					case 0x09:
+						return ((apu_stat->channel[apu_io_id].timer >> shift_16) & 0xFF);
+
+					//Loop Start
+					case 0x0A:
+					case 0x0B:
+						return ((apu_stat->channel[apu_io_id].loop_start >> shift_16) & 0xFF);
+
+					//Length
+					case 0x0C:
+					case 0x0D:
+					case 0x0E:
+					case 0x0F:
+						return ((apu_stat->channel[apu_io_id].length >> shift_32) & 0xFF);
+				}
 			}
 
 			break;
@@ -822,14 +887,35 @@ u8 NTR_MMU::read_u8(u32 address)
 	//Check POSTFLG - NDS7
 	else if((address == NDS_POSTFLG) && (!access_mode)) { return memory_map[address] & 0x1; }
 
-	//Check for SOUNDXCNT - NDS7
-	else if((address & ~0x3) == NDS_SOUNDXCNT)
+	//Check for SOUNDCAP_CNT - NDS7
+	else if((address == NDS_SOUNDCAP_CNT0) || (address == NDS_SOUNDCAP_CNT1))
 	{
-		//Only NDS7 can access this register, return 0 for NDS9
+		//Only NDS7 can access these registers, return 0 for NDS9
+		if(access_mode) { return 0; }
+
+		return sound_cap[address & 0x01].cnt;
+	}
+
+	//Check for SOUNDCAP_DAD - NDS7
+	else if(((address & ~0x3) == NDS_SOUNDCAP_DAD0) || ((address & ~0x3) == NDS_SOUNDCAP_CNT1))
+	{
+		//Only NDS7 can access these registers, return 0 for NDS9
 		if(access_mode) { return 0; }
 
 		u8 addr_shift = (address & 0x3) << 3;
-		return ((apu_stat->channel[apu_io_id].cnt >> addr_shift) & 0xFF);
+		u8 cap_select = (address & 0x8) ? 1 : 0;
+		return ((sound_cap[cap_select].destination_address >> addr_shift) & 0xFF);
+	}
+
+	//Check for SOUNDCAP_LEN - NDS7
+	else if(((address & ~0x1) == NDS_SOUNDCAP_LEN0) || ((address & ~0x1) == NDS_SOUNDCAP_LEN1))
+	{
+		//Only NDS7 can access these registers, return 0 for NDS9
+		if(access_mode) { return 0; }
+
+		u8 addr_shift = (address & 0x1) << 3;
+		u8 cap_select = (address & 0x8) ? 1 : 0;
+		return ((sound_cap[cap_select].length >> addr_shift) & 0xFF);
 	}
 
 	//Check for DMA0CNT
@@ -4905,6 +4991,7 @@ void NTR_MMU::write_u8(u32 address, u8 value)
 			{
 				s16 raw_freq = 0;
 				u16 tmr = read_u16_fast(NDS_SOUNDXTMR | (apu_io_id << 8));
+				apu_stat->channel[apu_io_id].timer = tmr;
 
 				if(tmr & 0x8000)
 				{
@@ -4957,6 +5044,54 @@ void NTR_MMU::write_u8(u32 address, u8 value)
 		case NDS_SOUNDCNT + 2:
 		case NDS_SOUNDCNT + 3:
 			return;
+
+		case NDS_SOUNDCAP_CNT0:
+			if(access_mode) { return; }
+			sound_cap[0].cnt = value;
+
+			break;
+
+		case NDS_SOUNDCAP_CNT1:
+			if(access_mode) { return; }
+			sound_cap[1].cnt = value;
+
+			break;
+
+		case NDS_SOUNDCAP_DAD0:
+		case NDS_SOUNDCAP_DAD0 + 1:
+		case NDS_SOUNDCAP_DAD0 + 2:
+		case NDS_SOUNDCAP_DAD0 + 3:
+			if(access_mode) { return; }
+			memory_map[address] = value;
+			sound_cap[0].destination_address = read_u32_fast(NDS_SOUNDCAP_DAD0);
+
+			break;
+
+		case NDS_SOUNDCAP_LEN0:
+		case NDS_SOUNDCAP_LEN0 + 1:
+			if(access_mode) { return; }
+			memory_map[address] = value;
+			sound_cap[0].length = read_u16_fast(NDS_SOUNDCAP_LEN0);
+
+			break;
+
+		case NDS_SOUNDCAP_DAD1:
+		case NDS_SOUNDCAP_DAD1 + 1:
+		case NDS_SOUNDCAP_DAD1 + 2:
+		case NDS_SOUNDCAP_DAD1 + 3:
+			if(access_mode) { return; }
+			memory_map[address] = value;
+			sound_cap[1].destination_address = read_u32_fast(NDS_SOUNDCAP_DAD1);
+
+			break;
+
+		case NDS_SOUNDCAP_LEN1:
+		case NDS_SOUNDCAP_LEN1 + 1:
+			if(access_mode) { return; }
+			memory_map[address] = value;
+			sound_cap[1].length = read_u16_fast(NDS_SOUNDCAP_LEN1);
+
+			break;
 
 		//GX - CLEAR_COLOR
 		case 0x4000350:
@@ -5959,7 +6094,7 @@ void NTR_MMU::process_aux_spi_bus()
 				nds_aux_spi.eeprom_stat |= (nds_aux_spi.data & 0xC) | 0x2;
 
 				//Process NTR-027 IR communications
-				if((current_slot1_device == SLOT1_NTR_031) && (config::ir_device == 7))
+				if((current_slot1_device == SLOT1_NTR_031) && (config::ir_device == IR_ACTIVITY_METER))
 				{
 					if((ntr_027.connected) && (ntr_027.state == 0))
 					{
@@ -5979,7 +6114,8 @@ void NTR_MMU::process_aux_spi_bus()
 			case 0x2:
 			case 0xA:
 				//Process NTR-027 IR communications
-				if((current_slot1_device == SLOT1_NTR_031) && (config::ir_device == 7) && (nds_aux_spi.state == 2) && (ntr_027.connected))
+				if((current_slot1_device == SLOT1_NTR_031) && (config::ir_device == IR_ACTIVITY_METER)
+				&& (nds_aux_spi.state == 2) && (ntr_027.connected))
 				{
 					ntr_027.state = 0;
 					ntr_027_process();
@@ -6771,10 +6907,10 @@ bool NTR_MMU::mmu_read(u32 offset, std::string filename)
 	file.read((char*)&do_save, sizeof(do_save));
 	file.read((char*)&fetch_request, sizeof(fetch_request));
 	file.read((char*)&gx_command, sizeof(gx_command));
-	file.read((char*)&header, sizeof(header));
 
-	//Serialize DMA data from save state
+	//Serialize DMA and Sound Capture data from save state
 	file.read((char*)&dma, sizeof(dma));
+	file.read((char*)&sound_cap, sizeof(sound_cap));
 
 	//Serialize even more misc data from MMU from save state
 	file.read((char*)&nds9_ie, sizeof(nds9_ie));
@@ -6809,13 +6945,6 @@ bool NTR_MMU::mmu_read(u32 offset, std::string filename)
 	file.read((char*)&pal_b_bg_slot, sizeof(pal_b_bg_slot));
 	file.read((char*)&pal_b_obj_slot, sizeof(pal_b_obj_slot));
 	file.read((char*)&vram_tex_slot, sizeof(vram_tex_slot));
-
-	//Serialize timers from save state
-	for(u32 x = 0; x < 4; x++)
-	{
-		file.read((char*)&nds9_timer->at(x), sizeof(nds9_timer->at(x)));
-		file.read((char*)&nds7_timer->at(x), sizeof(nds7_timer->at(x)));
-	}
 
 	file.close();
 	return true;
@@ -6958,10 +7087,10 @@ bool NTR_MMU::mmu_write(std::string filename)
 	file.write((char*)&do_save, sizeof(do_save));
 	file.write((char*)&fetch_request, sizeof(fetch_request));
 	file.write((char*)&gx_command, sizeof(gx_command));
-	file.write((char*)&header, sizeof(header));
 
-	//Serialize DMA data to save state
+	//Serialize DMA and Sound Capture data to save state
 	file.write((char*)&dma, sizeof(dma));
+	file.write((char*)&sound_cap, sizeof(sound_cap));
 
 	//Serialize even more misc data to MMU to save state
 	file.write((char*)&nds9_ie, sizeof(nds9_ie));
@@ -6996,13 +7125,6 @@ bool NTR_MMU::mmu_write(std::string filename)
 	file.write((char*)&pal_b_bg_slot, sizeof(pal_b_bg_slot));
 	file.write((char*)&pal_b_obj_slot, sizeof(pal_b_obj_slot));
 	file.write((char*)&vram_tex_slot, sizeof(vram_tex_slot));
-
-	//Serialize timers to save state
-	for(u32 x = 0; x < 4; x++)
-	{
-		file.write((char*)&nds9_timer->at(x), sizeof(nds9_timer->at(x)));
-		file.write((char*)&nds7_timer->at(x), sizeof(nds7_timer->at(x)));
-	}
 
 	file.close();
 	return true;
@@ -7056,9 +7178,9 @@ u32 NTR_MMU::size()
 	mmu_size += sizeof(do_save);
 	mmu_size += sizeof(fetch_request);
 	mmu_size += sizeof(gx_command);
-	mmu_size += sizeof(header);
 
 	mmu_size += sizeof(dma);
+	mmu_size += sizeof(sound_cap);
 
 	mmu_size += sizeof(nds9_ie);
 	mmu_size += sizeof(nds9_if);
@@ -7092,13 +7214,6 @@ u32 NTR_MMU::size()
 	mmu_size += sizeof(pal_b_bg_slot);
 	mmu_size += sizeof(pal_b_obj_slot);
 	mmu_size += sizeof(vram_tex_slot);
-
-	//Serialize timers to save state
-	for(u32 x = 0; x < 4; x++)
-	{
-		mmu_size += sizeof(nds9_timer->at(x));
-		mmu_size += sizeof(nds7_timer->at(x));
-	}
 
 	return mmu_size;
 }

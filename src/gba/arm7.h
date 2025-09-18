@@ -169,6 +169,7 @@ class ARM7
 	bool sleep;
 
 	bool swi_vblank_wait;
+	bool thumb_long_branch;
 
 	u32 instruction_pipeline[3];
 	arm_instructions instruction_operation[3];
@@ -286,6 +287,8 @@ class ARM7
 	void swi_lz77uncompvram();
 	void swi_rluncompvram();
 	void swi_huffuncomp();
+	void swi_diff8unfilter(bool is_vram_version);
+	void swi_diff16unfilter();
 	void swi_getbioschecksum();
 	void swi_bgaffineset();
 	void swi_objaffineset();

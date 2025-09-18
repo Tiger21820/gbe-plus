@@ -27,11 +27,14 @@ enum sio_types
 	GB_POWER_ANTENNA,
 	GB_SINGER_IZEK,
 	GB_ASCII_TURBO_FILE,
+	GB_VAUS_CONTROLLER,
+	GB_WORKBOY,
 };
 
 //Infrared device-type enumeration
 enum ir_types
 {
+	NO_GB_IR,
 	GBC_IR_PORT,
 	GBC_FULL_CHANGER,
 	GBC_POKEMON_PIKACHU_2,
@@ -101,6 +104,15 @@ enum turbo_file_state
 	TURBO_FILE_PACKET_BODY,
 	TURBO_FILE_PACKET_END,
 	TURBO_FILE_DATA,
+};
+
+enum workboy_state
+{
+	WORKBOY_INIT,
+	WORKBOY_ACTIVE,
+	WORKBOY_RTC_READ,
+	WORKBOY_RTC_WRITE,
+	WORKBOY_KEYBOARD,
 };
 
 enum full_changer_state
@@ -251,6 +263,7 @@ struct dmg_sio_data
 	u32 dmg07_clock;
 	sio_types sio_type;
 	ir_types ir_type;
+	s32 halt_counter;
 };
 
 #endif // GB_SIO_DATA 

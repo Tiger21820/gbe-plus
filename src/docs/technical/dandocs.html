@@ -177,6 +177,14 @@
 			<p class="list_item"><a href="#ndg">Net de Get: Minigame @ 100</a></p>
 			<p class="list_item"><a href="#zng">Zen Nihon GT Senshuken</a></p>
 		</div>
+
+		<div class="toc_sec">
+			<p class="toc_gray_title">Unreleased Hardware</p>
+
+			<p class="list_head"><strong>DMG and GBC</strong></p>
+			<p class="list_item"><a href="#vaus">Vaus Controller</a></p>
+			<p class="list_item"><a href="#work">WorkBoy</a></p>
+		</div>
 	</div>
 
 	<a name="about"></a>
@@ -2179,7 +2187,7 @@ ELSE
 	<a name="sew_sta"></a>
 	<p class="gray_title">[Sewing Machines] : Sewing Machine Status</p>
 
-	<p>The sewing machines report their status whenever the Game Boy sends the value 0x80 via external transfer. This byte describes various aspect of the machine during operation.</p>
+	<p>The sewing machines report their status whenever the Game Boy sends the value 0x80 via external transfer. This byte describes various aspects of the machine during operation.</p>
 
 <pre>-------------------------------------------------
 Status Byte
@@ -4756,8 +4764,7 @@ AM_SMID		(R)	0x08010410	128-bit		16-byte SmartMedia ID used for copy-protection
 
 <pre>-----------------------------------------------------------
 Bit 0		(R/W)		Execute Operation
-Bit 1-2		(R/W)		Operation Type
-Bit 3		(R/W)		Internal Operation/External Operation
+Bit 1-3		(R/W)		Operation Type
 ...
 Bit 8		(R)		EOF Reached/Passed Flag
 ...
@@ -4766,24 +4773,7 @@ Bit 14		(R)		I/O Registers Ready Flag
 
 	<p>Whenever AM_BLK_STAT is written, firmware waits indefinitely to validate that the register holds the new value. Every command issued to the adapter must set Bit 0 to &#34;1&#34; to take effect. Afterwards, it waits until Bit 0 returns to &#34;0&#34; to signal the end of the operation. After every operation, the lower 8-bits of AM_BLK_STAT will always read as zero, however, depending on the current status of the adapter, the upper read-only 8-bits may be set.</p>
 
-	<p>Operation Type describes 4 fundamental operations available:</p>
-
-<pre>-----------------------------------------------------------
-Value		| Operation Description
------------------------------------------------------------
-0		| Read Block
-1		| Write I/O Register
-2		| Set File Size Mode
-3		| Set SMID Mode
------------------------------------------------------------</pre>
-
-	<p>The most common operation is &#34;Read Block&#34; which simply copies a data block of a set size from either firmware or the SmartMedia card.</p>
-
-	<p>Writing to an I/O register is exactly that. AM_BLK_STAT needs to signal to the adapter that the CPU will update one of its I/O registers.</p>
-
-	<p>Set File Size Mode and Set SMID Mode refer to the values held in AM_FILE_SIZE and AM_SMID. Since these registers have overlapping addresses, AM_BLK_STAT controls which mode the adapter will use, and which values to return when reading these memory locations. Once the SMID is read, there is usually no need to return to this mode.</p>
-
-	<p>These operations can be further divided as being &#34;internal&#34; or &#34;external&#34;. The first deals with data that resides on the Advance Movie Adapter itself, such as reading firmware or writing to I/O registers. The second deals with data residing on the SmartMedia card, such as the files themselves, file sizes, and SMID. A value of &#34;1&#34; chooses internal operations, while a value of &#34;0&#34; chooses external operations. In practice, however, only a few limited values are ever written to AM_BLK_STAT. These can then be seen as single-byte &#34;commands&#34;.</p>
+	<p>Operation Type describes 5 operations available. Because Bit 0 of AM_BLK_STAT executes these operations, they can be seen as single-byte &#34;commands&#34;:</p>
 
 <pre>-----------------------------------------------------------
 Command		| Description
@@ -4794,6 +4784,12 @@ Command		| Description
 0x09		| Read Firmware Data Block
 0x0B		| Write I/O Register
 -----------------------------------------------------------</pre>
+
+	<p>The most common operations are reading data blocks from SmartMedia Card or firmware. This simply maps data of a specified length from either source to AM_BLK_ADDR.</p>
+
+	<p>Writing to an I/O register is exactly that. AM_BLK_STAT needs to signal to the adapter that the CPU will update one of its I/O registers.</p>
+
+	<p>Set File Size Mode and Set SMID Mode refer to the values held in AM_FILE_SIZE and AM_SMID. Since these registers have overlapping addresses, AM_BLK_STAT controls which mode the adapter will use and which values to return when reading these memory locations. Once the SMID is read, there is usually no need to return to this mode.</p>
 
 	<p>When performing any of these commands, it is recommended to disable interrupts. Any non-zero writes to AM_BLK_STAT will trigger a GamePak IRQ once the value of AM_BLK_STAT is updated. Servicing other interrupts may delay the progam from determining when exactly an operation has finished when AM_BLK_STAT&#39;s Bit 0 reads zero. For AM3 cards, this timing is critical to deliver smooth audio and video playback, so interrupts are disabled frequently in the firmware while it waits in several tight loops.</p>
 
@@ -10535,6 +10531,201 @@ Ghost Entry Format
 	<p>For user input, the game uses characters 0x000, 0x081, 0x084, 0x0F5, and 0x100. Characters 0x0BE and 0x0BF appear on the katakana keyboard, while characters 0x12E and 0x12F appear on the hiragana keyboard, though none are actual input characters, and they are unlikely to have been used in downloadable content. Characters 0x0C0, 0x0C1, 0x130, and 0x131 are not available for user input, so it is unknown which, if any, were used in downloadable content. Character 0x135, along with all characters starting at 0x14F, have garbage tile data and should not be used. Finally, character 0xFFFF is used as a terminator.</p>
 
 
+
+
+
+
+
+	<!-- Vaus Controller -->
+	<a name="vaus"></a>
+	<p class="gray_title">Vaus Controller</p>
+	<p class="list_item"><a href="#vaus_gen">General Information</a></p>
+	<p class="list_item"><a href="#vaus_opr">Operation</a></p>
+
+	<a name="vaus_gen"></a>
+	<p class="gray_title">[Vaus Controller] : General Information</p>
+
+	<p>The Vaus Controller is a hypothetical accessory for the original Game Boy. In theory, it would have been released alongside the Game Boy in early 1989. Alleyway, a launch title for the system, still has leftover code that appears to communicate with an unknown device via the Link Cable. The data returned from the Link Cable controls the player&#39;s paddle and allows the game to pause/resume and start a new ball.</p>
+
+	<p>Given Alleyway&#39;s similarity to Arkanoid, the device may have been a &#34;Vaus Controller&#34; similar to those found on other platforms (such the one for the NES made by Taito). It would have comprised some sort of rotating control knob and a single button to fire the ball. If it had been released, the &#34;Vaus Controller&#34; would have been the earliest example of analog controls on the Game Boy.</p>
+
+	<p>The exact reason why the Vaus Controller was never realized is unknown. One suggestion is that, as a Link Cable accessory that likely required 2 hands, it may have been cumbersome to deal with on the Game Boy. Additionally, design-wise it may not have been suitable for the image of portability Nintendo wanted project for its new handheld.</p>
+
+	<a name="vaus_opr"></a>
+	<p class="gray_title">[Vaus Controller] : Operation</p>
+
+	<p>The Vaus Controller returns a 16-bit value representing the ADC value of the control knob as well as input for a single button. The Game Boy acts on an internal clock when communicating with the Vaus Controller and must send 2 transfers to grab the 16-bit value. The Vaus Controller does not seem to care about the incoming values from the Game Boy. Data is transferred Least Significant Byte first. Its format is as follows:</p>
+
+<pre>---------------------------------------------------------
+Bit 0 - 7	| 8-bit ADC
+Bit 8 - 14	| N/A
+Bit 15		| Button Input
+---------------------------------------------------------</pre>
+
+	<p>The 8-bit ADC value should have a minimum range of 0x3F and a maximum range of 0x97. These values translate the paddle from left to right across the screen. An ADC value of 0x6B centers the paddle.</p>
+
+	<p>Button Input is a single bit. When Bit 15 is set to 1, a new ball is launched. Alternatively, this will pause/resume gameplay. In effect, Alleyway treats this as a substitute for the START button.</p>
+
+
+
+
+
+
+
+
+	<!-- WorkBoy -->
+	<a name="work"></a>
+	<p class="gray_title">WorkBoy</p>
+	<p class="list_item"><a href="#work_gen">General Information</a></p>
+	<p class="list_item"><a href="#work_com">Communication Protocol</a></p>
+	<p class="list_item"><a href="#work_rtc">Real-Time Clock</a></p>
+	<p class="list_item"><a href="#work_key">Keyboard Input</a></p>
+
+	<a name="work_gen"></a>
+	<p class="gray_title">[WorkBoy] : General Information</p>
+
+	<p>The WorkBoy is a cancelled Game Boy accessory made by Fabtek. It would have been released in December 1992, but circumstances prevented the product from launching. The device itself is a small, handheld keyboard that connects to the Game Boy via the Link Cable. In conjunction with specialized software, the WorkBoy allows users to send keyboard input to the Game Boy in order to perform small office-related tasks. Previously, both the software and the hardware were believed to be lost to time but have since been found.</p>
+
+	<ul>
+		<li class="list_item">Uses 2 coin-cell batteries for power.</li>
+		<li class="list_item">Features a miniature QWERTY keyboard.</li>
+		<li class="list_item">Has a built-in real-time clock.</li>
+		<li class="list_item">Has a built-in speaker for alarm functionality.</li>
+		<li class="list_item">Contains a small amount of DRAM to save some data.</li>
+	</ul>
+
+	<a name="work_com"></a>
+	<p class="gray_title">[WorkBoy] : Communication Protocol</p>
+
+	<p>The WorkBoy communicates via the Link Cable using several commands. The Game Boy runs on an Internal Clock and is responsible for driving the protocol. The known commands are listed below:</p>
+
+<pre>---------------------------------------------------------
+Command	| Description
+---------------------------------------------------------
+0x44	| Read RTC Data
+0x4F	| Poll Keyboard Input
+0x52	| WorkBoy Init
+0x57	| Write RTC Data
+---------------------------------------------------------</pre>
+
+	<p>When booting, software will issue the WorkBoy Init command. This is a single byte command with no parameters, however, the WorkBoy should eventually respond with a 0x44 byte to indicate that the RTC can be read. The following sections deal with RTC reading/writing and keyboard input in detail.</p>
+
+	<a name="work_rtc"></a>
+	<p class="gray_title">[WorkBoy] : Real-Time Clock</p>
+
+	<p>To read the RTC, the Game Boy must first send the command byte 0x44. The WorkBoy should immediately respond with a series of 42 bytes representing the current time and date as well as other data that is currently undocumented. After the command byte, the Game Boy continually transfers the value 0x00 while the WorkBoy is replying. Evidently, all data from the WorkBoy must be non-zero, otherwise it seems to indicate an error. The following bytes from the WorkBoy are the known data for the RTC:</p>
+
+<pre>---------------------------------------------------------
+Byte	| Description
+---------------------------------------------------------
+0x04	| Seconds - First Digit
+0x05	| Seconds - Second Digit
+0x06	| Minutes - First Digit
+0x07	| Minutes - Second Digit
+0x08	| Hours - First Digit
+0x09	| Hours - Second Digit
+0x0A	| Day - First Digit
+0x0B	| Day - Second Digit
+0x0C	| Month - First Digit
+0x0D	| Month - Second Digit
+0x1E	| Year - MSB
+0x1F	| Year - LSB
+---------------------------------------------------------</pre>
+
+	<p>Every value except the year is expressed as ASCII values that represent a 2 digit number. That is to say, representing something like 37 seconds would use the ASCII values &#34;3&#34; and &#34;7&#34;, or 0x33 and 0x37 in hexadecimal.</p>
+
+	<p>Years are slightly more elaborate. The lowest year possible is 1900, and this is used as a base. The current year is then an offset from that, calculated as such, using whole integers for division:</p>
+
+<pre>---------------------------------------------------------
+YEAR_DIFF = CURRENT_YEAR - 1900
+YEAR_DIV = (DIFF / 16)
+
+YEAR MSB = 0x30 + YEAR_DIV
+YEAR LSB = 0x30 + (CURRENT_YEAR - (YEAR_DIFF * 16))
+---------------------------------------------------------</pre>
+
+	<p>To write to the RTC, the Game Boy must first send the command byte 0x57. Afterwards, the Game Boy sends a stream of 23 bytes to set the time and date. The format of the data is as follows:</p>
+
+<pre>---------------------------------------------------------
+Byte	| Description
+---------------------------------------------------------
+0x06	| Always 0x04
+0x08	| Seconds
+0x09	| Minutes
+0x0A	| Hours
+0x0B	| Days + Some Bits of Years
+0x0C	| Month + Some Bits of Years
+0x15	| Years
+0x16	| Years (Copy)
+---------------------------------------------------------</pre>
+
+	<p>For Seconds, Minutes, and Hours, the values written to the WorkBoy are binary coded decimals. This is also true of Bits 0-5 of Days value and Bits 0-4 of Month value. The upper-bits of both, however, store information about the Year value. The Year value is the current number of years since 1900 with the lower 2 bits masked off. Those same 2 bits, however, are the upper-bits of the Days value. The upper 3 bits of the Months value is incremented once for every year since 1900 *and* it is also incremented again every 4 years.</p>
+
+	<a name="work_key"></a>
+	<p class="gray_title">[WorkBoy] : Keyboard Input</p>
+
+	<p>The WorkBoy has a semi-standard QWERTY keyboard that can be used as input in addition to the Game Boy&#39;s buttons. Software can poll the WorkBoy to receive the latest key that was pressed. Only a single value from the keyboard will be read at any given time, so it is important to poll the keyboard frequently to catch user input. To read from the keyboard, the Game Boy simply sends the command byte 0x4F. The following values represent the key selected:</p>
+
+<pre>----------------------------------------------------------------------------------------------------------------------
+Byte	| CAPS Mode				| NUM Mode
+----------------------------------------------------------------------------------------------------------------------
+0x00	| No Keyboard Input			|
+0x01	| App Key -> Clock			|
+0x02	| App Key -> Tempurature Conversion	|
+0x03	| App Key -> Currency and Checkbook	|
+0x04	| App Key -> Calculator			|
+0x05	| App Key -> Calendar and Appointments	|
+0x06	| App Key -> Unit Conversion		|
+0x07	| App Key -> Database and Phone Records	|
+0x08	| App Key -> Translator and World Map	|
+0x09	| App Key -> Phone Dialer		|
+0x0A	| Escape				|
+0x0B	| Delete / Backspace			|
+0x0C	| Insert				|
+0x10	| Left Arrow				|
+0x11	| Q					| 1
+0x12	| W					| 2
+0x13	| E					| 3
+0x14	| R					| M+ (for calculator only)
+0x15	| T					| M- (for calculator only)
+0x16	| Y					| MR (for calculator only)
+0x17	| U					| MC (for calculator only)
+0x18	| I					| !
+0x19	| O					| £
+0x1A	| P					| *
+0x1B	| $					| #
+0x1C	| A					| 4
+0x1D	| S					| 5
+0x1E	| D					| 6
+0x1F	| F					| +
+0x20	| G					| -
+0x21	| H					| × (for calculator only)
+0x22	| J					| ÷ (for calculator only)
+0x23	| K					| (
+0x24	| L					| )
+0x25	| ;					| :
+0x26	| Return / Enter			|
+0x27	| NUMS Mode				|
+0x28	| Z					| 7
+0x29	| X					| 8
+0x2A	| C					| 9
+0x2B	| V					| .
+0x2C	| B					| %
+0x2D	| N					| =
+0x2E	| M					| C (for calculator only)
+0x2F	| ,					| <
+0x30	| .					| >
+0x31	| /					| ?
+0x32	| CAPS Mode				|
+0x33	| &#34;					| 0
+0x34	| Space					|
+0x35	| &#39;					| @
+0x36	| Up Arrow 				|
+0x37	| Down Arrow				|
+0x38	| Right Arrow				|
+----------------------------------------------------------------------------------------------------------------------</pre>
+
+	<p>The WorkBoy&#39;s keyboard does not appear to have a dedicated shift key to modify values. Instead, it relies on the CAPS and NUM keys to swap between each mode. Unlike most PC keyboards, the WorkBoy does not have any built-in lighting to indicate which mode is active. Instead, the software typically puts a &#34;C&#34; or &#34;N&#34; character inside a colored block for the cursor. Note that some applications (such as the telephone dialer) can force CAPS or NUM mode.</p>
 
 
 	</body>

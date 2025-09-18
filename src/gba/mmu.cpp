@@ -273,7 +273,7 @@ u8 AGB_MMU::read_u8(u32 address)
 
 		//Unused memory at 0x10000000 and above
 		default:
-			std::cout<<"Out of bounds read : 0x" << std::hex << address << "\n";
+			//std::cout<<"Out of bounds read : 0x" << std::hex << address << "\n";
 			return 0;
 			
 	}
@@ -343,7 +343,7 @@ u8 AGB_MMU::read_u8(u32 address)
 			break;
 
 		case KEYINPUT:
-			return g_pad->is_gb_player ? (g_pad->key_input & 0x0F) : (g_pad->key_input & 0xFF);
+			return (g_pad->key_input & 0xFF);
 			break;
 
 		case KEYINPUT+1:
@@ -352,7 +352,7 @@ u8 AGB_MMU::read_u8(u32 address)
 
 		case R_CNT:
 			//Receive data from Magic Watch if necessary
-			if((config::sio_device == 19) && (mw->active)) { magic_watch_recv(); }
+			if((config::sio_device == SIO_MAGICAL_WATCH) && (mw->active)) { magic_watch_recv(); }
 
 			return (sio_stat->r_cnt & 0xFF);
 			break;
@@ -669,7 +669,7 @@ void AGB_MMU::write_u8(u32 address, u8 value)
 
 		//Unused memory at 0x10000000 and above
 		default:
-			std::cout<<"Out of bounds write : 0x" << std::hex << address << "\n";
+			//std::cout<<"Out of bounds write : 0x" << std::hex << address << "\n";
 			return;
 	}
 
@@ -1576,26 +1576,26 @@ void AGB_MMU::write_u8(u32 address, u8 value)
 
 			switch(value & 0x7)
 			{
-				case 0x0: apu_stat->channel_right_volume = 4369 * 0.125; break;
-				case 0x1: apu_stat->channel_right_volume = 4369 * 0.25; break;
-				case 0x2: apu_stat->channel_right_volume = 4369 * 0.375; break;
-				case 0x3: apu_stat->channel_right_volume = 4369 * 0.5; break;
-				case 0x4: apu_stat->channel_right_volume = 4369 * 0.625; break;
-				case 0x5: apu_stat->channel_right_volume = 4369 * 0.75; break;
-				case 0x6: apu_stat->channel_right_volume = 4369 * 0.875; break;
-				case 0x7: apu_stat->channel_right_volume = 4369; break;
+				case 0x0: apu_stat->channel_right_volume = 0.125; break;
+				case 0x1: apu_stat->channel_right_volume = 0.25; break;
+				case 0x2: apu_stat->channel_right_volume = 0.375; break;
+				case 0x3: apu_stat->channel_right_volume = 0.5; break;
+				case 0x4: apu_stat->channel_right_volume = 0.625; break;
+				case 0x5: apu_stat->channel_right_volume = 0.75; break;
+				case 0x6: apu_stat->channel_right_volume = 0.875; break;
+				case 0x7: apu_stat->channel_right_volume = 1.0; break;
 			}
 
 			switch((value >> 4) & 0x7)
 			{
-				case 0x0: apu_stat->channel_left_volume = 4369 * 0.125; break;
-				case 0x1: apu_stat->channel_left_volume = 4369 * 0.25; break;
-				case 0x2: apu_stat->channel_left_volume = 4369 * 0.375; break;
-				case 0x3: apu_stat->channel_left_volume = 4369 * 0.5; break;
-				case 0x4: apu_stat->channel_left_volume = 4369 * 0.625; break;
-				case 0x5: apu_stat->channel_left_volume = 4369 * 0.75; break;
-				case 0x6: apu_stat->channel_left_volume = 4369 * 0.875; break;
-				case 0x7: apu_stat->channel_left_volume = 4369; break;
+				case 0x0: apu_stat->channel_left_volume = 0.125; break;
+				case 0x1: apu_stat->channel_left_volume = 0.25; break;
+				case 0x2: apu_stat->channel_left_volume = 0.375; break;
+				case 0x3: apu_stat->channel_left_volume = 0.5; break;
+				case 0x4: apu_stat->channel_left_volume = 0.625; break;
+				case 0x5: apu_stat->channel_left_volume = 0.75; break;
+				case 0x6: apu_stat->channel_left_volume = 0.875; break;
+				case 0x7: apu_stat->channel_left_volume = 1.0; break;
 			}
 
 			break;
@@ -1953,22 +1953,22 @@ void AGB_MMU::write_u8(u32 address, u8 value)
 			process_sio();
 
 			//Trigger transfer to emulated Soul Doll Adapter if necessary
-			if((config::sio_device == 9) && (address == R_CNT+1)) { sio_stat->emu_device_ready = true; }
+			if((config::sio_device == SIO_SOUL_DOLL_ADAPTER) && (address == R_CNT+1)) { sio_stat->emu_device_ready = true; }
 
 			//Toggle Power Antenna ON or OFF if necessary
-			if(config::sio_device == 13) { sio_stat->emu_device_ready = true; }
+			if(config::sio_device == SIO_POWER_ANTENNA) { sio_stat->emu_device_ready = true; }
 
 			//Trigger transfer to emulated Multi Plust On System if necessary
-			else if((config::sio_device == 15) && (address == R_CNT+1)) { sio_stat->emu_device_ready = true; }
+			else if((config::sio_device == SIO_MULTI_PLUST_ON_SYSTEM) && (address == R_CNT+1)) { sio_stat->emu_device_ready = true; }
 
 			//Trigger transfer to emulated AGB-006 if necessary
-			else if((config::sio_device == 17) && (address == R_CNT+1)) { sio_stat->emu_device_ready = true; }
+			else if((config::sio_device == SIO_GBA_IR_ADAPTER) && (address == R_CNT+1)) { sio_stat->emu_device_ready = true; }
 
 			//Trigger transfer to emulated Magic Watch if necessary
-			else if((config::sio_device == 19) && (address == R_CNT)) { sio_stat->emu_device_ready = true; }
+			else if((config::sio_device == SIO_MAGICAL_WATCH) && (address == R_CNT)) { sio_stat->emu_device_ready = true; }
 
 			//Trigger transfer to emulated GBA Wireless Adapter if necessary
-			else if((config::sio_device == 20) && (address == R_CNT)) { sio_stat->emu_device_ready = true; }
+			else if((config::sio_device == SIO_GBA_WIRELESS_ADAPTER) && (address == R_CNT)) { sio_stat->emu_device_ready = true; }
 
 			break;
 			
@@ -2363,10 +2363,13 @@ bool AGB_MMU::read_file(std::string filename)
 		std::string patch_file = filename.substr(0, dot);
 
 		//Attempt a IPS patch
-		bool patch_pass = patch_ips(patch_file + ".ips");
+		bool patch_pass = util::patch_ips((patch_file + ".ips"), memory_map, 0x8000000, 0x2000000);
 
 		//Attempt a UPS patch
-		if(!patch_pass) { patch_pass = patch_ups(patch_file + ".ups"); }
+		if(!patch_pass)
+		{
+			patch_pass = util::patch_ups((patch_file + ".ups"), memory_map, 0x8000000, 0x2000000);
+		}
 	}
 
 	//Calculate 8-bit checksum
@@ -3391,31 +3394,32 @@ void AGB_MMU::process_sio()
 		sio_stat->sio_mode = MULTIPLAY_16BIT;
 
 		//Convert baud rate to approximate GBA CPU cycles
-		switch(sio_stat->cnt & 0x3)
+		switch(sio_stat->cnt & 0x03)
 		{
-			case 0x0: sio_stat->shift_clock = 1747; break;
-			case 0x1: sio_stat->shift_clock = 436; break;
-			case 0x2: sio_stat->shift_clock = 291; break;
-			case 0x3: sio_stat->shift_clock = 145; break;
+			case 0x00: sio_stat->shift_clock = 27962; break;
+			case 0x01: sio_stat->shift_clock = 69905; break;
+			case 0x02: sio_stat->shift_clock = 4660; break;
+			case 0x03: sio_stat->shift_clock = 2330; break;
 		}
 
 		//Mask out Read-Only bits - Do not mask START bit for master
 		//sio_stat->cnt &= (sio_stat->player_id == 0) ? ~0x7C : ~0xFC;
 
 		//Determine Parent-Child status
-		if(sio_stat->player_id != 0) { sio_stat->cnt |= 0x4; }
+		if(sio_stat->player_id != 0) { sio_stat->cnt |= 0x04; }
+		else { sio_stat->cnt &= ~0x04; }
 
 		//Determine connection status
-		if(sio_stat->connection_ready || ((sio_stat->sio_type == GBA_VRS) || (sio_stat->sio_type == GBA_BATTLE_CHIP_GATE))) { sio_stat->cnt |= 0x8; }
+		if(sio_stat->connection_ready || ((sio_stat->sio_type == GBA_VRS) || (sio_stat->sio_type == GBA_BATTLE_CHIP_GATE))) { sio_stat->cnt |= 0x08; }
 
 		//Determine Player ID
-		sio_stat->cnt |= ((sio_stat->player_id & 0x3) << 4);
+		sio_stat->cnt |= ((sio_stat->player_id & 0x03) << 4);
 
 		//Start transfer
 		if((sio_stat->player_id == 0) && (!sio_stat->active_transfer) && (sio_stat->cnt & 0x80))
 		{
 			sio_stat->active_transfer = true;
-			sio_stat->shifts_left = 16;
+			sio_stat->shifts_left = 1;
 			sio_stat->shift_counter = 0;
 			sio_stat->transfer_data = (memory_map[SIO_DATA_8 + 1] << 8) | memory_map[SIO_DATA_8];
 
@@ -3444,7 +3448,7 @@ void AGB_MMU::process_sio()
 		//Set internal or external clock
 		sio_stat->internal_clock = (sio_stat->cnt & 0x1) ? true : false;
 
-		//Start transfer
+		//Start transfer for various emulated devices
 		if((sio_stat->player_id == 0) && (!sio_stat->active_transfer) && (sio_stat->internal_clock) && (sio_stat->cnt & 0x80))
 		{
 			//Initiate transfer to Mobile Adapter GB
@@ -3466,6 +3470,16 @@ void AGB_MMU::process_sio()
 			}
 		}
 
+		//Transfer SO for Link Cable
+		else if((!sio_stat->active_transfer) && ((sio_stat->cnt & 0x80) == 0) && (sio_stat->sio_type == GBA_LINK))
+		{
+			sio_stat->transfer_data = sio_stat->cnt;
+			sio_stat->send_so_status = true;
+			sio_stat->active_transfer = true;
+			sio_stat->shifts_left = 1;
+			sio_stat->shift_counter = sio_stat->shift_clock;
+		}
+
 		//Turn Power Antenna on or off
 		else if((sio_stat->sio_type == GBA_POWER_ANTENNA) && ((sio_stat->cnt & 0x80) || (!sio_stat->internal_clock)))
 		{
@@ -3474,10 +3488,11 @@ void AGB_MMU::process_sio()
 		}
 
 		//Signal to emulated GB Player rumble that emulated GBA is ready for SIO transfer
-		else if((config::sio_device == 7) && (!sio_stat->internal_clock) && (sio_stat->cnt & 0x80))
+		else if((config::sio_device == SIO_GB_PLAYER_RUMBLE) && (!sio_stat->internal_clock) && (sio_stat->cnt & 0x80))
 		{
 			sio_stat->emu_device_ready = true;
-			sio_emu_device_ready = true;
+			sio_stat->active_transfer = true;
+			sio_stat->shift_counter = 0;
 		}	
 	}
 
@@ -3492,8 +3507,8 @@ void AGB_MMU::process_sio()
 		//Set internal or external clock
 		sio_stat->internal_clock = (sio_stat->cnt & 0x1) ? true : false;
 
-		//Start transfer
-		if((sio_stat->player_id == 0) && (!sio_stat->active_transfer) && (sio_stat->internal_clock) && (sio_stat->cnt & 0x80))
+		//Start transfer for various emulated devices
+		if((!sio_stat->active_transfer) && (sio_stat->internal_clock) && (sio_stat->cnt & 0x80))
 		{
 			//Turn Power Antenna on or off
 			if((sio_stat->sio_type == GBA_POWER_ANTENNA) && ((sio_stat->cnt & 0x80) || (!sio_stat->internal_clock)))
@@ -3509,6 +3524,16 @@ void AGB_MMU::process_sio()
 				sio_stat->active_transfer = true;
 				sio_stat->transfer_data = memory_map[SIO_DATA_8];
 			}
+		}
+
+		//Transfer SO for Link Cable
+		else if((!sio_stat->active_transfer) && ((sio_stat->cnt & 0x80) == 0) && (sio_stat->sio_type == GBA_LINK))
+		{
+			sio_stat->transfer_data = sio_stat->cnt;
+			sio_stat->send_so_status = true;
+			sio_stat->active_transfer = true;
+			sio_stat->shifts_left = 1;
+			sio_stat->shift_counter = sio_stat->shift_clock;
 		}
 
 		//Start transfer - Special case for Turbo File Advance
@@ -3573,229 +3598,6 @@ void AGB_MMU::magic_watch_recv()
 			mw->active = false;
 		}
 	}		
-}
-
-/****** Applies an IPS patch to a ROM loaded in memory ******/
-bool AGB_MMU::patch_ips(std::string filename)
-{
-	std::ifstream patch_file(filename.c_str(), std::ios::binary);
-
-	if(!patch_file.is_open()) 
-	{ 
-		std::cout<<"MMU::" << filename << " IPS patch file could not be opened. Check file path or permissions. \n";
-		return false;
-	}
-
-	//Get the file size
-	patch_file.seekg(0, patch_file.end);
-	u32 file_size = patch_file.tellg();
-	patch_file.seekg(0, patch_file.beg);
-
-	std::vector<u8> patch_data;
-	patch_data.resize(file_size, 0);
-
-	//Read patch file into buffer
-	u8* ex_patch = &patch_data[0];
-	patch_file.read((char*)ex_patch, file_size);
-
-	//Check header for PATCH string
-	if((patch_data[0] != 0x50) || (patch_data[1] != 0x41) || (patch_data[2] != 0x54) || (patch_data[3] != 0x43) || (patch_data[4] != 0x48))
-	{
-		std::cout<<"MMU::" << filename << " IPS patch file has invalid header\n";
-		return false;
-	}
-
-	bool end_of_file = false;
-	u32 patch_pos = 5;
-
-	while((patch_pos < file_size) && (!end_of_file))
-	{
-		//Grab a record offset - 3 bytes
-		if((patch_pos + 3) > file_size)
-		{
-			std::cout<<"MMU::" << filename << " file ends unexpectedly (OFFSET). Aborting further patching.\n";
-		}
-
-		u32 offset = (patch_data[patch_pos++] << 16) | (patch_data[patch_pos++] << 8) | patch_data[patch_pos++];
-
-		//Quit if EOF marker is reached
-		if(offset == 0x454F46) { end_of_file = true; break; }
-
-		//Grab record size - 2 bytes
-		if((patch_pos + 2) > file_size)
-		{
-			std::cout<<"MMU::" << filename << " file ends unexpectedly (DATA_SIZE). Aborting further patching.\n";
-			return false;
-		}
-
-		u16 data_size = (patch_data[patch_pos++] << 8) | patch_data[patch_pos++];
-
-		//Perform regular patching if size is non-zero
-		if(data_size)
-		{
-			if((patch_pos + data_size) > file_size)
-			{
-				std::cout<<"MMU::" << filename << " file ends unexpectedly (DATA). Aborting further patching.\n";
-				return false;
-			}
-
-			for(u32 x = 0; x < data_size; x++)
-			{
-				u8 patch_byte = patch_data[patch_pos++];
-
-				memory_map[0x8000000 + offset] = patch_byte;
-
-				offset++;
-			}
-		}
-
-		//Patch with RLE
-		else
-		{
-			//Grab Run-length size and value - 3 bytes
-			if((patch_pos + 3) > file_size)
-			{
-				std::cout<<"MMU::" << filename << " file ends unexpectedly (RLE). Aborting further patching.\n";
-				return false;
-			}
-
-			u16 rle_size = (patch_data[patch_pos++] << 8) | patch_data[patch_pos++];
-			u8 patch_byte = patch_data[patch_pos++];
-
-			for(u32 x = 0; x < rle_size; x++)
-			{
-				memory_map[0x8000000 + offset] = patch_byte;
-
-				offset++;
-			}
-		}
-	}
-
-	patch_file.close();
-	patch_data.clear();
-
-	return true;
-}
-
-/****** Applies an UPS patch to a ROM loaded in memory ******/
-bool AGB_MMU::patch_ups(std::string filename)
-{
-	std::ifstream patch_file(filename.c_str(), std::ios::binary);
-
-	if(!patch_file.is_open()) 
-	{ 
-		std::cout<<"MMU::" << filename << " UPS patch file could not be opened. Check file path or permissions. \n";
-		return false;
-	}
-
-	//Get the file size
-	patch_file.seekg(0, patch_file.end);
-	u32 file_size = patch_file.tellg();
-	patch_file.seekg(0, patch_file.beg);
-
-	std::vector<u8> patch_data;
-	patch_data.resize(file_size, 0);
-
-	//Read patch file into buffer
-	u8* ex_patch = &patch_data[0];
-	patch_file.read((char*)ex_patch, file_size);
-
-	//Check header for UPS1 string
-	if((patch_data[0] != 0x55) || (patch_data[1] != 0x50) || (patch_data[2] != 0x53) || (patch_data[3] != 0x31))
-	{
-		std::cout<<"MMU::" << filename << " UPS patch file has invalid header\n";
-		return false;
-	}
-
-	u32 patch_pos = 4;
-	u32 patch_size = file_size - 12;
-	u32 file_pos = 0;
-
-	//Grab file sizes
-	for(u32 x = 0; x < 2; x++)
-	{
-		//Grab variable width integer
-		u32 var_int = 0;
-		bool var_end = false;
-		u8 var_shift = 0;
-
-		while(!var_end)
-		{
-			//Grab byte from patch file
-			u8 var_byte = patch_data[patch_pos++];
-			
-			if(var_byte & 0x80)
-			{
-				var_int += ((var_byte & 0x7F) << var_shift);
-				var_end = true;
-			}
-
-			else
-			{
-				var_int += ((var_byte | 0x80) << var_shift);
-				var_shift += 7;
-			}
-		}
-	}
-
-	//Begin patching the source file
-	while(patch_pos < patch_size)
-	{
-		//Grab variable width integer
-		u32 var_int = 0;
-		bool var_end = false;
-		u8 var_shift = 0;
-
-		while(!var_end)
-		{
-			//Grab byte from patch file
-			u8 var_byte = patch_data[patch_pos++];
-			
-			if(var_byte & 0x80)
-			{
-				var_int += ((var_byte & 0x7F) << var_shift);
-				var_end = true;
-			}
-
-			else
-			{
-				var_int += ((var_byte | 0x80) << var_shift);
-				var_shift += 7;
-			}
-		}
-
-		//XOR data at offset with patch
-		var_end = false;
-		file_pos += var_int;
-
-		while(!var_end)
-		{
-			//Abort if patching greater than 32MB
-			if(file_pos > 0x2000000)
-			{
-				std::cout<<"MMU::" << filename << "patches beyond max ROM size. Aborting further patching.\n";
-				return false;
-			}
-
-			u8 patch_byte = patch_data[patch_pos++];
-
-			//Terminate patching for this chunk if encountering a zero byte
-			if(patch_byte == 0) { var_end = true; }
-
-			//Otherwise, use the byte to patch
-			else
-			{
-				memory_map[0x8000000 + file_pos] ^= patch_byte;
-			}
-
-			file_pos++;
-		}
-	}
-
-	patch_file.close();
-	patch_data.clear();
-
-	return true;
 }
 
 /****** Points the MMU to an lcd_data structure (FROM THE LCD ITSELF) ******/

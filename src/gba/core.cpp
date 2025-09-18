@@ -352,13 +352,25 @@ void AGB_core::run_core()
 			if(core_cpu.controllers.serial_io.sio_stat.connected)
 			{
 				//Perform syncing operations when hard sync is enabled
-				if(config::netplay_hard_sync) { hard_sync(); }
+				if(core_cpu.controllers.serial_io.sio_stat.use_hard_sync) { hard_sync(); }
 
 				//Receive bytes normally
 				core_cpu.controllers.serial_io.receive_byte();
 
 				//Clock SIO
 				core_cpu.clock_sio();
+
+				//End hard sync after a certain amount of time
+				if(core_cpu.controllers.serial_io.sio_stat.halt_counter > 0)
+				{
+					core_cpu.controllers.serial_io.sio_stat.halt_counter -= core_cpu.system_cycles;
+
+					if(core_cpu.controllers.serial_io.sio_stat.halt_counter <= 0)
+					{
+						core_cpu.controllers.serial_io.sio_stat.halt_counter = 0;
+						core_cpu.controllers.serial_io.stop_sync();
+					}
+				}
 			}
 
 			//Otherwise, try to run any emulate SIO devices attached to GBE+
@@ -401,6 +413,8 @@ void AGB_core::run_core()
 				core_cpu.pipeline_pointer = (core_cpu.pipeline_pointer + 1) % 3;
 				core_cpu.update_pc(); 
 			}
+
+			core_cpu.thumb_long_branch = false;
 		}
 
 		//Stop emulation
@@ -432,6 +446,8 @@ void AGB_core::step()
 			core_cpu.pipeline_pointer = (core_cpu.pipeline_pointer + 1) % 3;
 			core_cpu.update_pc(); 
 		}
+
+		core_cpu.thumb_long_branch = false;
 	}
 }
 	
@@ -891,7 +907,6 @@ void AGB_core::hard_sync()
 		while(core_cpu.controllers.serial_io.sio_stat.sync)
 		{
 			core_cpu.controllers.serial_io.receive_byte();
-			//if(core_cpu.controllers.serial_io.is_master) { core_cpu.controllers.serial_io.four_player_request_sync(); }
 
 			//Timeout if 10 seconds passes
 			timeout = SDL_GetTicks();

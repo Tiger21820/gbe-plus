@@ -35,6 +35,7 @@ class SGB_GamePad : virtual public dmg_core_pad
 	void process_joystick(int pad, bool pressed);
 	void process_gyroscope();
 	void process_turbo_buttons();
+	void process_vaus();
 	void start_rumble();
 	void stop_rumble();
 	u8 read();
@@ -60,6 +61,10 @@ class SGB_GamePad : virtual public dmg_core_pad
 		std::vector<u8> data;
 		bool lcd_command;
 	} packet;
+
+	private:
+
+	u32 axis_magnitude;
 };
 
 #endif // SGB_GAMEPAD 

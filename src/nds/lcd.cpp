@@ -4749,9 +4749,47 @@ bool NTR_LCD::lcd_read(u32 offset, std::string filename)
 	file.seekg(offset);
 
 	file.read((char*)&lcd_stat, sizeof(lcd_stat));
+	file.read((char*)&lcd_3D_stat, sizeof(lcd_3D_stat));
 
 	file.read((char*)&obj, sizeof(obj));
 	file.read((char*)&capture_on, sizeof(capture_on));
+
+	//Serialize fixed sets of matrices
+	serialize_matrix(file, last_poly);
+	serialize_matrix(file, current_poly);
+
+	serialize_matrix(file, gx_projection_matrix);
+	serialize_matrix(file, gx_position_matrix);
+	serialize_matrix(file, gx_vector_matrix);
+	serialize_matrix(file, gx_texture_matrix);
+
+	//Serialize multi sets of matrices
+	for(u32 x = 0; x < 4; x++)
+	{
+		serialize_matrix(file, last_pos_matrix[x]);
+		serialize_matrix(file, light_vector[x]);
+		serialize_matrix(file, current_normal[x]);
+	}
+
+	for(u32 x = 0; x < 2; x++)
+	{
+		serialize_matrix(file, gx_projection_stack[x]);
+		serialize_matrix(file, gx_texture_stack[x]);
+	}
+
+	for(u32 x = 0; x < 32; x++)
+	{
+		serialize_matrix(file, gx_position_stack[x]);
+		serialize_matrix(file, gx_vector_stack[x]);
+	}
+
+	file.read((char*)&position_sp, sizeof(position_sp));
+	file.read((char*)&vector_sp, sizeof(vector_sp));
+	file.read((char*)&projection_sp, sizeof(projection_sp));
+
+	file.read((char*)&light_colors, sizeof(light_colors));
+	file.read((char*)&material_colors, sizeof(material_colors));
+	file.read((char*)&shine_table, sizeof(shine_table));
 
 	file.close();
 	return true;
@@ -4760,14 +4798,57 @@ bool NTR_LCD::lcd_read(u32 offset, std::string filename)
 /****** Write LCD data to save state ******/
 bool NTR_LCD::lcd_write(std::string filename)
 {
+	gx_projection_stack.resize(2);
+	gx_position_stack.resize(32);
+	gx_vector_stack.resize(32);
+	gx_texture_stack.resize(2);
+
 	std::ofstream file(filename.c_str(), std::ios::binary | std::ios::app);
 	
 	if(!file.is_open()) { return false; }
 
 	file.write((char*)&lcd_stat, sizeof(lcd_stat));
+	file.write((char*)&lcd_3D_stat, sizeof(lcd_3D_stat));
 
 	file.write((char*)&obj, sizeof(obj));
 	file.write((char*)&capture_on, sizeof(capture_on));
+
+	//Serialize fixed sets of matrices
+	serialize_matrix(file, last_poly);
+	serialize_matrix(file, current_poly);
+
+	serialize_matrix(file, gx_projection_matrix);
+	serialize_matrix(file, gx_position_matrix);
+	serialize_matrix(file, gx_vector_matrix);
+	serialize_matrix(file, gx_texture_matrix);
+
+	//Serialize multi sets of matrices
+	for(u32 x = 0; x < 4; x++)
+	{
+		serialize_matrix(file, last_pos_matrix[x]);
+		serialize_matrix(file, light_vector[x]);
+		serialize_matrix(file, current_normal[x]);
+	}
+
+	for(u32 x = 0; x < 2; x++)
+	{
+		serialize_matrix(file, gx_projection_stack[x]);
+		serialize_matrix(file, gx_texture_stack[x]);
+	}
+
+	for(u32 x = 0; x < 32; x++)
+	{
+		serialize_matrix(file, gx_position_stack[x]);
+		serialize_matrix(file, gx_vector_stack[x]);
+	}
+
+	file.write((char*)&position_sp, sizeof(position_sp));
+	file.write((char*)&vector_sp, sizeof(vector_sp));
+	file.write((char*)&projection_sp, sizeof(projection_sp));
+
+	file.write((char*)&light_colors, sizeof(light_colors));
+	file.write((char*)&material_colors, sizeof(material_colors));
+	file.write((char*)&shine_table, sizeof(shine_table));
 
 	file.close();
 	return true;

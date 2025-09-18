@@ -61,6 +61,7 @@ void ARM7::reset()
 	sleep = false;
 	needs_reset = false;
 
+	thumb_long_branch = false;
 	swi_vblank_wait = false;
 
 	arm_mode = ARM;
@@ -1596,8 +1597,14 @@ void ARM7::clock_sio()
 			{
 				controllers.serial_io.sio_stat.active_transfer = false;
 
+				//SO transfer for NORMAL_8BIT or NORMAL_32BIT
+				if((controllers.serial_io.sio_stat.sio_type == GBA_LINK) && (controllers.serial_io.sio_stat.send_so_status))
+				{
+					controllers.serial_io.send_data();
+				}
+
 				//16-bit Multiplayer Mode
-				if((controllers.serial_io.sio_stat.sio_type == GBA_LINK) && (controllers.serial_io.sio_stat.sio_mode == MULTIPLAY_16BIT))
+				else if((controllers.serial_io.sio_stat.sio_type == GBA_LINK) && (controllers.serial_io.sio_stat.sio_mode == MULTIPLAY_16BIT))
 				{
 					//Reset Bit 7 in SIO_CNT
 					controllers.serial_io.sio_stat.cnt &= ~0x80;
@@ -1605,16 +1612,6 @@ void ARM7::clock_sio()
 
 					//Transfer data over network
 					controllers.serial_io.send_data();
-				}
-
-				//32-bit Normal Mode - GB Player Rumble
-				else if((controllers.serial_io.sio_stat.sio_type == GBA_PLAYER_RUMBLE) && (controllers.serial_io.sio_stat.sio_mode == NORMAL_32BIT))
-				{
-					//Reset Bit 7 in SIO_CNT
-					mem->memory_map[SIO_CNT] &= ~0x80;
-
-					//Process GB Player Rumble
-					controllers.serial_io.gba_player_rumble_process();
 				}
 			}
 		}
@@ -1626,7 +1623,7 @@ void ARM7::clock_emulated_sio_device()
 {
 	switch(config::sio_device)
 	{
-		case 0x3:
+		case SIO_MOBILE_ADAPTER:
 			if((controllers.serial_io.sio_stat.sio_mode == NORMAL_8BIT) || (controllers.serial_io.sio_stat.sio_mode == NORMAL_32BIT))
 			{
 				//Reset Bit 7 in SIO_CNT
@@ -1656,17 +1653,40 @@ void ARM7::clock_emulated_sio_device()
 
 			break;
 
-		case 0x9:
+		case SIO_GB_PLAYER_RUMBLE:
+			if(controllers.serial_io.sio_stat.sio_mode == NORMAL_32BIT)
+			{
+				u32 max_cycles = controllers.serial_io.sio_stat.shift_clock * 32;
+				controllers.serial_io.sio_stat.shift_counter += system_cycles;
+
+				if(controllers.serial_io.sio_stat.shift_counter >= max_cycles)
+				{
+					//Reset Bit 7 in SIO_CNT
+					controllers.serial_io.sio_stat.cnt &= ~0x80;
+					mem->write_u16_fast(SIO_CNT, controllers.serial_io.sio_stat.cnt);
+
+					//Process GB Player Rumble
+					controllers.serial_io.gba_player_rumble_process();
+
+					controllers.serial_io.sio_stat.shift_counter = 0;
+					controllers.serial_io.sio_stat.emu_device_ready = false;
+					controllers.serial_io.sio_stat.active_transfer = false;
+				}
+			}
+
+			break;
+			
+		case SIO_SOUL_DOLL_ADAPTER:
 			controllers.serial_io.soul_doll_adapter_process();
 			break;
 
-		case 0xA:
-		case 0xB:
-		case 0xC:
+		case SIO_BATTLE_CHIP_GATE:
+		case SIO_PROGRESS_CHIP_GATE:
+		case SIO_BEAST_LINK_GATE:
 			controllers.serial_io.battle_chip_gate_process();
 			break;
 
-		case 0xD:
+		case SIO_POWER_ANTENNA:
 			//Turn on Power Antenna
 			if((controllers.serial_io.sio_stat.sio_mode == NORMAL_8BIT) || (controllers.serial_io.sio_stat.sio_mode == NORMAL_32BIT))
 			{
@@ -1701,11 +1721,11 @@ void ARM7::clock_emulated_sio_device()
 
 			break;
 
-		case 0xF:
+		case SIO_MULTI_PLUST_ON_SYSTEM:
 			controllers.serial_io.mpos_process();
 			break;
 
-		case 0x10:
+		case SIO_TURBO_FILE:
 			//Process Turbo File Advance
 			if(controllers.serial_io.sio_stat.sio_mode == NORMAL_8BIT)
 			{
@@ -1715,7 +1735,7 @@ void ARM7::clock_emulated_sio_device()
 			controllers.serial_io.sio_stat.emu_device_ready = false;
 			controllers.serial_io.sio_stat.active_transfer = false;
 
-		case 0x11:
+		case SIO_GBA_IR_ADAPTER:
 			//Process AGB-006
 			if(mem->sub_screen_update)
 			{
@@ -1746,7 +1766,7 @@ void ARM7::clock_emulated_sio_device()
 
 			break;
 
-		case 0x12:
+		case SIO_VIRTUREAL_RACING_SYSTEM:
 			if(!controllers.serial_io.vrs.active) { return; }
 
 			//Process Virtual Racing System
@@ -1768,14 +1788,14 @@ void ARM7::clock_emulated_sio_device()
 
 			break;
 
-		case 0x13:
+		case SIO_MAGICAL_WATCH:
 			controllers.serial_io.magic_watch_process();
 			controllers.serial_io.sio_stat.emu_device_ready = false;
 			controllers.serial_io.sio_stat.active_transfer = false;
 
 			break;
 
-		case 0x14:
+		case SIO_GBA_WIRELESS_ADAPTER:
 			if(controllers.serial_io.wireless_adapter.is_sending) { controllers.serial_io.wireless_adapter.cycles += system_cycles; }
 			controllers.serial_io.wireless_adapter_process();
 			break;
@@ -1817,40 +1837,34 @@ void ARM7::clock_timers()
 							mem->memory_map[REG_IF] |= (8 << x);
 						}
 
-						//Timer 0 Audio FIFO A, DMA 1-2
-						if((x == 0) && (controllers.audio.apu_stat.dma[0].timer == 0) && (mem->dma[1].destination_address == FIFO_A) && (mem->dma[1].started)) 
+						u8 fifo_a = controllers.audio.apu_stat.dma[0].channel;
+						u8 fifo_b = controllers.audio.apu_stat.dma[1].channel;
+
+						//FIFO A Audio
+						if((x == controllers.audio.apu_stat.dma[0].timer) && (mem->dma[fifo_a].destination_address == FIFO_A) && (mem->dma[fifo_a].started)) 
 						{
-							controllers.audio.apu_stat.dma[0].buffer[controllers.audio.apu_stat.dma[0].counter++] = mem->memory_map[mem->dma[1].start_address++];
+							controllers.audio.apu_stat.dma[0].buffer[controllers.audio.apu_stat.dma[0].counter++] = mem->memory_map[mem->dma[fifo_a].start_address++];
 							controllers.audio.apu_stat.dma[0].length++;
 
 							//Trigger DMA IRQ after 16th bit is transferred
-							if((mem->memory_map[REG_IE+1] & 0x2) && ((controllers.audio.apu_stat.dma[0].counter % 16) == 0)) { mem->memory_map[REG_IF+1] |= 0x2; }
+							if((mem->memory_map[REG_IE+1] & 0x2) && ((controllers.audio.apu_stat.dma[0].counter % 16) == 0))
+							{
+								mem->memory_map[REG_IF+1] |= 0x2;
+							}
 						}
 
-						if((x == 0) && (controllers.audio.apu_stat.dma[1].timer == 0) && (mem->dma[2].destination_address == FIFO_B) && (mem->dma[2].started)) 
+						//FIFO B Audio
+						if((x == controllers.audio.apu_stat.dma[1].timer) && (mem->dma[fifo_b].destination_address == FIFO_B) && (mem->dma[fifo_b].started)) 
 						{
-							controllers.audio.apu_stat.dma[1].buffer[controllers.audio.apu_stat.dma[1].counter++] = mem->memory_map[mem->dma[2].start_address++];
+							controllers.audio.apu_stat.dma[1].buffer[controllers.audio.apu_stat.dma[1].counter++] = mem->memory_map[mem->dma[fifo_b].start_address++];
 							controllers.audio.apu_stat.dma[1].length++;
 
 							//Trigger DMA IRQ after 16th bit is transferred
-							if((mem->memory_map[REG_IE+1] & 0x4) && ((controllers.audio.apu_stat.dma[1].counter % 16) == 0)) { mem->memory_map[REG_IF+1] |= 0x4; }
+							if((mem->memory_map[REG_IE+1] & 0x4) && ((controllers.audio.apu_stat.dma[1].counter % 16) == 0))
+							{
+								mem->memory_map[REG_IF+1] |= 0x4;
+							}
 						}
-					
-						/*
-						else if((x == 0) && (controllers.audio.apu_stat.dma[0].timer == 0) && (mem->dma[2].destination_address == FIFO_A)) { }
-
-						//Timer 0 Audio FIFO B, DMA 1-2
-						else if((x == 0) && (controllers.audio.apu_stat.dma[1].timer == 0) && (mem->dma[1].destination_address == FIFO_B)) { }
-						else if((x == 0) && (controllers.audio.apu_stat.dma[1].timer == 0) && (mem->dma[2].destination_address == FIFO_B)) { }
-
-						//Timer 1 Audio FIFO A, DMA 1-2
-						else if((x == 1) && (controllers.audio.apu_stat.dma[0].timer == 1) && (mem->dma[1].destination_address == FIFO_A)) { }
-						else if((x == 1) && (controllers.audio.apu_stat.dma[0].timer == 1) && (mem->dma[2].destination_address == FIFO_A)) { }
-
-						//Timer 1 Audio FIFO B, DMA 1-2
-						else if((x == 1) && (controllers.audio.apu_stat.dma[1].timer == 1) && (mem->dma[1].destination_address == FIFO_B)) { }
-						else if((x == 1) && (controllers.audio.apu_stat.dma[1].timer == 1) && (mem->dma[2].destination_address == FIFO_B)) { }
-						*/
 					}
 				}
 			}
@@ -1896,6 +1910,10 @@ void ARM7::handle_interrupt()
 	//Jump into an interrupt, check if the master flag is enabled
 	if((mem->memory_map[REG_IME] & 0x1) && ((reg.cpsr & CPSR_IRQ) == 0) && (!in_interrupt))
 	{
+		//Wait until pipeline is finished filling
+		//Wait until THUMB.19 is finished executing
+		if((debug_message == 0xFF) || (thumb_long_branch)) { return; }
+
 		u16 if_check = mem->read_u16_fast(REG_IF);
 		u16 ie_check = mem->read_u16_fast(REG_IE);
 
@@ -1987,6 +2005,7 @@ bool ARM7::cpu_read(u32 offset, std::string filename)
 	file.read((char*)&needs_reset, sizeof(needs_reset));
 	file.read((char*)&in_interrupt, sizeof(in_interrupt));
 	file.read((char*)&sleep, sizeof(sleep));
+	file.read((char*)&thumb_long_branch, sizeof(thumb_long_branch));
 	file.read((char*)&swi_vblank_wait, sizeof(swi_vblank_wait));
 	file.read((char*)&instruction_pipeline[0], sizeof(instruction_pipeline[0]));
 	file.read((char*)&instruction_pipeline[1], sizeof(instruction_pipeline[1]));
@@ -2028,6 +2047,7 @@ bool ARM7::cpu_write(std::string filename)
 	file.write((char*)&needs_reset, sizeof(needs_reset));
 	file.write((char*)&in_interrupt, sizeof(in_interrupt));
 	file.write((char*)&sleep, sizeof(sleep));
+	file.write((char*)&thumb_long_branch, sizeof(thumb_long_branch));
 	file.write((char*)&swi_vblank_wait, sizeof(swi_vblank_wait));
 	file.write((char*)&instruction_pipeline[0], sizeof(instruction_pipeline[0]));
 	file.write((char*)&instruction_pipeline[1], sizeof(instruction_pipeline[1]));
@@ -2064,6 +2084,7 @@ u32 ARM7::size()
 	cpu_size += sizeof(needs_reset);
 	cpu_size += sizeof(in_interrupt);
 	cpu_size += sizeof(sleep);
+	cpu_size += sizeof(thumb_long_branch);
 	cpu_size += sizeof(swi_vblank_wait);
 	cpu_size += sizeof(instruction_pipeline[0]);
 	cpu_size += sizeof(instruction_pipeline[1]);

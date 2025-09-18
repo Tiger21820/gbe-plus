@@ -1598,7 +1598,7 @@ bool NTR_ARM9::cpu_read(u32 offset, std::string filename)
 	//Serialize CPU registers data from file stream
 	file.read((char*)&reg, sizeof(reg));
 
-	//Serialize misc CPU data to save state
+	//Serialize misc CPU data from save state
 	file.read((char*)&current_cpu_mode, sizeof(current_cpu_mode));
 	file.read((char*)&arm_mode, sizeof(arm_mode));
 	file.read((char*)&running, sizeof(running));
@@ -1622,11 +1622,24 @@ bool NTR_ARM9::cpu_read(u32 offset, std::string filename)
 	file.read((char*)&system_cycles, sizeof(system_cycles));
 	file.read((char*)&re_sync, sizeof(re_sync));
 
-	//Serialize timers to save state
-	file.read((char*)&controllers.timer, sizeof(controllers.timer));
+	//Serialize timers from save state
+	for(u32 x = 0; x < 4; x++)
+	{
+		file.read((char*)&controllers.timer[x], sizeof(controllers.timer[x]));
+	}
 
 	//Serialize CP15 registers
 	file.read((char*)&co_proc.regs, sizeof(co_proc.regs));
+
+	//Serialize misc CP15 data
+	file.read((char*)&co_proc.pu_enable, sizeof(co_proc.pu_enable));
+	file.read((char*)&co_proc.unified_cache, sizeof(co_proc.unified_cache));
+	file.read((char*)&co_proc.instr_cache, sizeof(co_proc.instr_cache));
+	file.read((char*)&co_proc.exception_vector, sizeof(co_proc.exception_vector));
+	file.read((char*)&co_proc.cache_replacement, sizeof(co_proc.cache_replacement));
+	file.read((char*)&co_proc.pre_armv5, sizeof(co_proc.pre_armv5));
+	file.read((char*)&co_proc.dtcm_enable, sizeof(co_proc.dtcm_enable));
+	file.read((char*)&co_proc.itcm_enable, sizeof(co_proc.itcm_enable));
 
 	file.close();
 	return true;
@@ -1667,10 +1680,23 @@ bool NTR_ARM9::cpu_write(std::string filename)
 	file.write((char*)&re_sync, sizeof(re_sync));
 
 	//Serialize timers to save state
-	file.write((char*)&controllers.timer, sizeof(controllers.timer));
+	for(u32 x = 0; x < 4; x++)
+	{
+		file.write((char*)&controllers.timer[x], sizeof(controllers.timer[x]));
+	}
 
 	//Serialize CP15 registers
 	file.write((char*)&co_proc.regs, sizeof(co_proc.regs));
+
+	//Serialize misc CP15 data
+	file.write((char*)&co_proc.pu_enable, sizeof(co_proc.pu_enable));
+	file.write((char*)&co_proc.unified_cache, sizeof(co_proc.unified_cache));
+	file.write((char*)&co_proc.instr_cache, sizeof(co_proc.instr_cache));
+	file.write((char*)&co_proc.exception_vector, sizeof(co_proc.exception_vector));
+	file.write((char*)&co_proc.cache_replacement, sizeof(co_proc.cache_replacement));
+	file.write((char*)&co_proc.pre_armv5, sizeof(co_proc.pre_armv5));
+	file.write((char*)&co_proc.dtcm_enable, sizeof(co_proc.dtcm_enable));
+	file.write((char*)&co_proc.itcm_enable, sizeof(co_proc.itcm_enable));
 
 	file.close();
 	return true;
@@ -1701,12 +1727,26 @@ u32 NTR_ARM9::size()
 	cpu_size += sizeof(debug_code);
 	cpu_size += sizeof(debug_cycles);
 	cpu_size += sizeof(debug_addr);
-	cpu_size += sizeof(controllers.timer);
+
+	for(u32 x = 0; x < 4; x++)
+	{
+		cpu_size += sizeof(controllers.timer[x]);
+	}
+
 	cpu_size += sizeof(sync_cycles);
 	cpu_size += sizeof(system_cycles);
 	cpu_size += sizeof(re_sync);
 
 	cpu_size += sizeof(co_proc.regs);
+
+	cpu_size += sizeof(co_proc.pu_enable);
+	cpu_size += sizeof(co_proc.unified_cache);
+	cpu_size += sizeof(co_proc.instr_cache);
+	cpu_size += sizeof(co_proc.exception_vector);
+	cpu_size += sizeof(co_proc.cache_replacement);
+	cpu_size += sizeof(co_proc.pre_armv5);
+	cpu_size += sizeof(co_proc.dtcm_enable);
+	cpu_size += sizeof(co_proc.itcm_enable);
 
 	return cpu_size;
 }

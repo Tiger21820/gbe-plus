@@ -245,7 +245,7 @@ bool DMG_SIO::init()
 	}
 
 	//When using HuC-1/HuC-3 IR, wait until transfers start before using hard sync
-	//For the time being, enable hard sync at all times for Link Cable transfers (this may change)
+	//When using the Link Cable, also wait until transfers start before using hard sync
 	//Hard sync is *always* on for the 4-Player Adapter (this probably won't change)
 	if(config::netplay_hard_sync)
 	{
@@ -254,7 +254,7 @@ bool DMG_SIO::init()
 			sio_stat.use_hard_sync = false;
 		}
 
-		else if((config::sio_device == 1) || (config::sio_device == 6))
+		else if(config::sio_device == SIO_4_PLAYER_ADAPTER)
 		{
 			sio_stat.use_hard_sync = true;
 		}
@@ -290,57 +290,56 @@ void DMG_SIO::reset()
 	sio_stat.ping_count = 0;
 	sio_stat.ping_finish = false;
 	sio_stat.send_data = false;
+	sio_stat.halt_counter = 0;
 	
 	switch(config::sio_device)
 	{
-		//No Link Cable or Device
-		case 0:
+		case SIO_NONE:
 			sio_stat.sio_type = NO_GB_DEVICE;
 			break;
 
-		//Link Cable
-		case 1:
+		case SIO_DMG_LINK_CABLE:
 			sio_stat.sio_type = GB_LINK;
 			break;
 
-		//GB Printer
-		case 2:
+		case SIO_PRINTER:
 			sio_stat.sio_type = GB_PRINTER;
 			break;
 
-		//GB Mobile Adapter
-		case 3: 
+		case SIO_MOBILE_ADAPTER: 
 			sio_stat.sio_type = GB_MOBILE_ADAPTER;
 			break;
 
-		//Bardigun barcode scanner
-		case 4:
+		case SIO_BTB_SCANNER:
 			sio_stat.sio_type = GB_BARDIGUN_SCANNER;
 			break;
 
-		//Barcode Boy
-		case 5:
+		case SIO_BARCODE_BOY:
 			sio_stat.sio_type = GB_BARCODE_BOY;
 			break;
 
-		//4 Player Adapter
-		case 6:
+		case SIO_4_PLAYER_ADAPTER:
 			sio_stat.sio_type = GB_FOUR_PLAYER_ADAPTER;
 			break;
 
-		//Power Antenna
-		case 13:
+		case SIO_POWER_ANTENNA:
 			sio_stat.sio_type = GB_POWER_ANTENNA;
 			break;
 
-		//Singer IZEK 1500
-		case 14:
+		case SIO_SEWING_MACHINE:
 			sio_stat.sio_type = GB_SINGER_IZEK;
 			break;
 
-		//Turbo File GB
-		case 16:
+		case SIO_TURBO_FILE:
 			sio_stat.sio_type = GB_ASCII_TURBO_FILE;
+			break;
+
+		case SIO_VAUS_CONTROLLER:
+			sio_stat.sio_type = GB_VAUS_CONTROLLER;
+			break;
+
+		case SIO_WORKBOY:
+			sio_stat.sio_type = GB_WORKBOY;
 			break;
 
 		//Always wait until netplay connection is established to change to GB_LINK
@@ -352,45 +351,40 @@ void DMG_SIO::reset()
 
 	switch(config::ir_device)
 	{
-		//Full Changer
-		case 1:
+		case IR_NONE:
+			sio_stat.ir_type = NO_GB_IR;
+			break;
+
+		case IR_GBC:
+			sio_stat.ir_type = GBC_IR_PORT;
+			break;
+
+		case IR_FULL_CHANGER:
 			sio_stat.ir_type = GBC_FULL_CHANGER;
 			break;
 
-		//Pokemon Pikachu 2
-		case 2:
+		case IR_POCKET_PIKACHU:
 			sio_stat.ir_type = GBC_POKEMON_PIKACHU_2;
 			break;
 
-		//Pocket Sakura
-		case 3:
+		case IR_POCKET_SAKURA:
 			sio_stat.ir_type = GBC_POCKET_SAKURA;
 			break;
 
-		//TV Remote
-		case 4:
+		case IR_TV_REMOTE:
 			sio_stat.ir_type = GBC_TV_REMOTE;
 			break;
 
-		//Constant Light Source
-		case 5:
+		case IR_CONSTANT_LIGHT:
 			sio_stat.ir_type = GBC_LIGHT_SOURCE;
 			break;
 
-		//IR Noise
-		case 8:
+		case IR_NOISE:
 			sio_stat.ir_type = GBC_IR_NOISE;
 			break;
 
-		//GB KISS LINK
-		case 9:
+		case IR_GB_KISS_LINK:
 			sio_stat.ir_type = GB_KISS_LINK;
-			break;
-
-		//Use standard GBC IR port communication as the default (GBE+ will ignore it for DMG games)
-		//Also, any invalid types are ignored
-		default:
-			sio_stat.ir_type = GBC_IR_PORT;
 			break;
 	}
 
@@ -435,7 +429,7 @@ void DMG_SIO::reset()
 	mobile_adapter.http_data = "";
 
 	//Load configuration data + internal server list
-	if(config::sio_device == 3)
+	if(config::sio_device == SIO_MOBILE_ADAPTER)
 	{
 		mobile_adapter_load_config();
 		mobile_adapter_load_server_list();
@@ -446,14 +440,14 @@ void DMG_SIO::reset()
 	bardigun_scanner.current_state = BARDIGUN_INACTIVE;
 	bardigun_scanner.inactive_counter = 0x500;
 	bardigun_scanner.barcode_pointer = 0;
-	if(config::sio_device == 4) { bardigun_load_barcode(config::external_card_file); }
+	if(config::sio_device == SIO_BTB_SCANNER) { bardigun_load_barcode(config::external_card_file); }
 
 	//Barcode Boy
 	barcode_boy.data.clear();
 	barcode_boy.current_state = BARCODE_BOY_INACTIVE;
 	barcode_boy.counter = 0;
 	barcode_boy.send_data = false;
-	if(config::sio_device == 5) { barcode_boy_load_barcode(config::external_card_file); }
+	if(config::sio_device == SIO_BARCODE_BOY) { barcode_boy_load_barcode(config::external_card_file); }
 
 	//Power Antenna
 	power_antenna_on = false;
@@ -509,7 +503,17 @@ void DMG_SIO::reset()
 	turbo_file.mem_card_status = 0x1;
 	turbo_file.bank = 0x0;
 
-	if(config::sio_device == 16)
+	//Vaus Controller
+	vaus_controller.counter = 0;
+
+	//WorkBoy
+	workboy.data_out = 0;
+	workboy.last_key = 0;
+	workboy.state = WORKBOY_INIT;
+	workboy.rtc_index = 0;
+	for(u32 x = 0; x < 42; x++) { workboy.rtc_data[x] = 0x30; }
+
+	if(config::sio_device == SIO_TURBO_FILE)
 	{
 		std::string turbo_save = config::data_path + "turbo_file_gb.sav";
 		turbo_file_load_data(turbo_save);
@@ -540,20 +544,20 @@ void DMG_SIO::reset()
 		tv_remote.data.push_back(random_data);
 	}
 	
-	if(config::ir_device == 1)
+	if(config::ir_device == IR_FULL_CHANGER)
 	{
 		std::string database = config::data_path + "bin/infrared/zzh_db.bin";
 		full_changer_load_db(database);
 	}
 
-	else if(config::ir_device == 2)
+	else if(config::ir_device == IR_POCKET_PIKACHU)
 	{
 		std::string database = config::data_path + "bin/infrared/pokemon_pikachu_db.bin";
 		pocket_ir.db_step = 0x7D7;
 		pocket_ir_load_db(database);
 	}
 
-	else if(config::ir_device == 3)
+	else if(config::ir_device == IR_POCKET_SAKURA)
 	{
 		std::string database = config::data_path + "bin/infrared/pocket_sakura_db.bin";
 		pocket_ir.db_step = 0x647;
@@ -675,6 +679,12 @@ bool DMG_SIO::send_byte()
 		{
 			mem->memory_map[REG_SB] = sio_stat.transfer_byte = temp_buffer[0];
 		}
+
+		//Reset hard sync if new SIO byte sent
+		if((config::netplay_hard_sync) && (!sio_stat.use_hard_sync))
+		{
+			sio_stat.use_hard_sync = true;
+		}
 	}
 
 	//Otherwise, emulate a disconnected Link Cable
@@ -691,6 +701,8 @@ bool DMG_SIO::send_byte()
 /****** Transfers one bit to another system's IR port ******/
 bool DMG_SIO::send_ir_signal()
 {
+	if(sio_stat.ir_type == NO_GB_IR) { return true; }
+
 	#ifdef GBE_NETPLAY
 
 	u8 temp_buffer[2];
@@ -754,7 +766,7 @@ bool DMG_SIO::receive_byte()
 				return true;
 			}
 
-			//Stop hard sync for IR signals
+			//Stop hard sync for Link Cable bytes and IR signals
 			else if(temp_buffer[1] == 0xF1)
 			{
 				sio_stat.sync = false;
@@ -798,18 +810,21 @@ bool DMG_SIO::receive_byte()
 				//Handle GBC IR signals
 				if(config::cart_type != DMG_HUC_IR)
 				{
-					//Clear out Bit 1 of RP if receiving signal
-					if(temp_buffer[0] == 1)
+					if(sio_stat.ir_type != NO_GB_IR)
 					{
-						mem->memory_map[REG_RP] &= ~0x2;
-						mem->ir_stat.fade_counter = 12672;
-					}
+						//Clear out Bit 1 of RP if receiving signal
+						if(temp_buffer[0] == 1)
+						{
+							mem->memory_map[REG_RP] &= ~0x2;
+							mem->ir_stat.fade_counter = 12672;
+						}
 
-					//Set Bit 1 of RP if IR signal is normal
-					else
-					{
-						mem->memory_map[REG_RP] |= 0x2;
-						mem->ir_stat.fade_counter = 0;
+						//Set Bit 1 of RP if IR signal is normal
+						else
+						{
+							mem->memory_map[REG_RP] |= 0x2;
+							mem->ir_stat.fade_counter = 0;
+						}
 					}
 				}
 
@@ -823,8 +838,8 @@ bool DMG_SIO::receive_byte()
 					else { mem->cart.huc_ir_input = 0x00; }
 				}
 
-				//Start IR hard sync timeout countdown
-				mem->ir_stat.halt_counter = 0x400000;
+				//Start hard sync timeout countdown
+				sio_stat.halt_counter = 0x400000;
 
 				//Reset hard sync if new IR signal received
 				if((config::netplay_hard_sync) && (!sio_stat.use_hard_sync))
@@ -857,6 +872,16 @@ bool DMG_SIO::receive_byte()
 				//Send other Game Boy the old SB value
 				temp_buffer[0] = sio_stat.transfer_byte;
 				sio_stat.transfer_byte = mem->memory_map[REG_SB];
+
+				//Start hard sync timeout countdown
+				sio_stat.halt_counter = 0x400000;
+
+				//Reset hard sync if new SIO byte received
+				if((config::netplay_hard_sync) && (!sio_stat.use_hard_sync))
+				{
+					sio_stat.use_hard_sync = true;
+					
+				}
 			}
 
 			//Otherwise, emulate a disconnected Link Cable
@@ -930,8 +955,7 @@ bool DMG_SIO::stop_sync()
 	sio_stat.sync = false;
 	sio_stat.use_hard_sync = false;
 	sio_stat.sync_counter = 0;
-
-	mem->ir_stat.halt_counter = 0;
+	sio_stat.halt_counter = 0;
 
 	#endif
 
@@ -2837,44 +2861,8 @@ void DMG_SIO::singer_izek_update()
 /****** Adjusts Y coordinate when stitching ******/
 u8 DMG_SIO::singer_izek_adjust_y(u8 y_val)
 {
-	switch(y_val)
-	{
-		case 0x00: return 20;
-		case 0x01: return 19;
-		case 0x02: return 18;
-		case 0x03: return 17;
-		case 0x04: return 16;
-		case 0x05: return 15;
-		case 0x06: return 14;
-		case 0x07: return 13;
-		case 0x08: return 12;
-		case 0x09: return 11;
-		case 0x0A: return 10;
-		case 0x0B: return 9;
-		case 0x0C: return 8;
-		case 0x0D: return 7;
-		case 0x0E: return 6;
-		case 0x0F: return 5;
-		case 0x10: return 4;
-		case 0x11: return 3;
-		case 0x12: return 2;
-		case 0x13: return 1;
-		case 0x14: return 0;
-		case 0x15: return 1;
-		case 0x16: return 2;
-		case 0x17: return 3;
-		case 0x18: return 4;
-		case 0x19: return 5;
-		case 0x1A: return 6;
-		case 0x1B: return 7;
-		case 0x1C: return 8;
-		case 0x1D: return 9;
-		case 0x1E: return 10;
-		case 0x1F: return 11;
-		case 0x20: return 12;
-		case 0x21: return 13;
-		case 0x22: return 14;
-	}
+	if(y_val < 0x15) { y_val = 0x14 - y_val; }
+	else { y_val -= 0x14; }
 
 	return y_val;
 }
@@ -3268,8 +3256,6 @@ void DMG_SIO::turbo_file_process()
 
 			break;
 	}
-
-	mem->memory_map[IF_FLAG] |= 0x08;
 }
 
 /****** Calculates the checksum for a packet sent by the Turbo File ******/
@@ -3346,4 +3332,153 @@ bool DMG_SIO::turbo_file_save_data(std::string filename)
 
 	std::cout<<"SIO::Saved Turbo File GB data.\n";
 	return true;
+}
+
+/****** Processes data sent from the Vaus Controller to the Game Boy ******/
+void DMG_SIO::vaus_controller_process()
+{
+	if((vaus_controller.counter & 0x01) == 0)
+	{
+		mem->memory_map[REG_SB] = (mem->g_pad->vaus_adc & 0xFF);
+		vaus_controller.counter++;
+	}
+
+	else
+	{
+		mem->memory_map[REG_SB] = (mem->g_pad->vaus_adc >> 8);
+		vaus_controller.counter++;
+	}
+
+	mem->memory_map[IF_FLAG] |= 0x08;
+}
+
+/****** Processes data sent from the WorkBoy to the Game Boy ******/
+void DMG_SIO::workboy_process()
+{
+	u8 data_in = sio_stat.transfer_byte;
+
+	//Handle RTC data
+	if(workboy.state == WORKBOY_RTC_READ)
+	{
+		if(workboy.rtc_index < 42)
+		{
+			workboy.data_out = workboy.rtc_data[workboy.rtc_index++];
+		}
+
+		if(workboy.rtc_index >= 42)
+		{
+			workboy.state = WORKBOY_ACTIVE;
+		}
+	}
+
+	else if(workboy.state == WORKBOY_RTC_WRITE)
+	{
+		//For now, ignore new RTC data
+		workboy.rtc_index++;
+
+		if(workboy.rtc_index >= 24)
+		{
+			workboy.state = WORKBOY_ACTIVE;
+		}
+	}
+
+	//Handle the rest of WorkBoy states
+	else
+	{
+		switch(data_in)
+		{
+			//Workboy Init
+			case 0x52:
+				workboy.data_out = 0x44;
+				workboy.state = WORKBOY_ACTIVE;
+				break;
+
+			//Begin RTC data
+			case 0x44:
+				workboy_get_time();
+
+				workboy.rtc_index = 0;
+				workboy.data_out = workboy.rtc_data[workboy.rtc_index++];
+				workboy.state = WORKBOY_RTC_READ;
+				break;
+
+			//Keyboard Input
+			case 0x4F:
+				workboy.data_out = mem->g_pad->workboy_key;
+				workboy.state = WORKBOY_KEYBOARD;
+
+				//Check for and prevent key repeats
+				if((workboy.last_key == workboy.data_out) && (workboy.data_out))
+				{
+					workboy.data_out = 0;
+				}
+
+				else
+				{
+					workboy.last_key = workboy.data_out;
+				}
+
+				break;
+
+			//Receive new RTC data
+			case 0x57:
+				workboy.rtc_index = 0;
+				workboy.data_out = 0x30;
+				workboy.state = WORKBOY_RTC_WRITE;
+				break;
+
+			default:
+				workboy.data_out = 0;
+		}
+	}
+
+	mem->memory_map[REG_SB] = workboy.data_out;
+	mem->memory_map[IF_FLAG] |= 0x08;
+}
+
+/****** Gets the current time and converts it into data for the WorkBoy ******/
+void DMG_SIO::workboy_get_time()
+{
+	time_t system_time = time(0);
+	tm* current_time = localtime(&system_time);
+
+	std::string num_str = "";
+	u16 years = 0;
+	u16 year_data = 0;
+
+	//Seconds
+	num_str = util::to_str((current_time->tm_sec + config::rtc_offset[0]) % 60);
+	while(num_str.length() < 2) { num_str = "0" + num_str; }
+	workboy.rtc_data[4] = num_str[0];
+	workboy.rtc_data[5] = num_str[1];
+
+	//Minutes
+	num_str = util::to_str((current_time->tm_min + config::rtc_offset[1]) % 60);
+	while(num_str.length() < 2) { num_str = "0" + num_str; }
+	workboy.rtc_data[6] = num_str[0];
+	workboy.rtc_data[7] = num_str[1];
+
+	//Hour
+	num_str = util::to_str((current_time->tm_hour + config::rtc_offset[2]) % 24);
+	while(num_str.length() < 2) { num_str = "0" + num_str; }
+	workboy.rtc_data[8] = num_str[0];
+	workboy.rtc_data[9] = num_str[1];
+
+	//Day
+	num_str = util::to_str(current_time->tm_mday);
+	while(num_str.length() < 2) { num_str = "0" + num_str; }
+	workboy.rtc_data[10] = num_str[0];
+	workboy.rtc_data[11] = num_str[1];
+
+	//Month
+	num_str = util::to_str(((current_time->tm_mon + config::rtc_offset[4]) % 12) + 1);
+	while(num_str.length() < 2) { num_str = "0" + num_str; }
+	workboy.rtc_data[12] = num_str[0];
+	workboy.rtc_data[13] = num_str[1];
+
+	//Year - Only seems to handle 1900 to 2155.
+	years = current_time->tm_year + config::rtc_offset[5];
+	year_data = (years / 16);
+	workboy.rtc_data[30] = 0x30 + year_data;
+	workboy.rtc_data[31] = 0x30 + (years - (year_data * 16));
 }

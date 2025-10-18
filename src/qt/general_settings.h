@@ -29,6 +29,7 @@
 #include "utp_menu.h"
 #include "magic_reader_menu.h"
 #include "mw_menu.h"
+#include "wantame_menu.h"
 
 class gen_settings : public QDialog
 {
@@ -55,9 +56,11 @@ class gen_settings : public QDialog
 	QPushButton* config_sio;
 	QPushButton* config_ir;
 	QPushButton* config_slot2;
+	QPushButton* config_mic;
 	QComboBox* sio_dev;
 	QComboBox* ir_dev;
 	QComboBox* slot2_dev;
+	QComboBox* mic_dev;
 	QCheckBox* auto_patch;
 
 	//Display tab widgets
@@ -104,6 +107,8 @@ class gen_settings : public QDialog
 	QLineEdit* gbc_bios;
 	QLineEdit* gba_bios;
 	QLineEdit* min_bios;
+	QLineEdit* arm7_bios;
+	QLineEdit* arm9_bios;
 	QLineEdit* nds_firmware;
 	QLineEdit* screenshot;
 	QLineEdit* game_saves;
@@ -113,6 +118,8 @@ class gen_settings : public QDialog
 	QLabel* gbc_bios_label;
 	QLabel* gba_bios_label;
 	QLabel* min_bios_label;
+	QLabel* arm7_bios_label;
+	QLabel* arm9_bios_label;
 	QLabel* nds_firmware_label;
 	QLabel* screenshot_label;
 	QLabel* game_saves_label;
@@ -217,6 +224,7 @@ class gen_settings : public QDialog
 	utp_menu* ubisoft_pedometer_menu;
 	mr_menu* magic_reader_menu;
 	mw_menu* magical_watch_menu;
+	wcs_menu* wantame_menu;
 	QMessageBox* warning_box;
 
 	void update_volume();
@@ -233,6 +241,7 @@ class gen_settings : public QDialog
 	void sio_dev_change();
 	void ir_dev_change();
 	void slot2_dev_change();
+	void mic_dev_change();
 	void overclock_change();
 	void set_patches();
 	void show_cheats();
@@ -240,6 +249,7 @@ class gen_settings : public QDialog
 	void show_sio_config();
 	void show_ir_config();
 	void show_slot2_config();
+	void show_mic_config();
 	void set_slot2_gba_file();
 	void set_ogl();
 	void screen_scale_change();

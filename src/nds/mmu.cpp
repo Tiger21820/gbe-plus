@@ -107,7 +107,17 @@ void NTR_MMU::reset()
 		case NTR_S2_MOTION_PACK:
 			current_slot2_device = SLOT2_MOTION_PACK;
 			break;
-	}	
+	}
+
+	switch(config::mic_device)
+	{
+		case MIC_WANTAME:
+			wcs.data.clear();
+			wcs.barcode = "";
+			wcs.index = 0;
+			wantame_scanner_load_barcode(config::external_card_file);
+			break;
+	}
 
 	memory_map.clear();
 	memory_map.resize(0x10000000, 0);
@@ -125,6 +135,8 @@ void NTR_MMU::reset()
 
 	capture_buffer.clear();
 	capture_buffer.resize(0xC000, 0);
+
+	for(u32 x = 0; x < 4; x++) { gx_fifo_mem[x] = 0; }
 
 	nds7_bios.clear();
 	nds7_bios.resize(0x4000, 0);
@@ -861,6 +873,12 @@ u8 NTR_MMU::read_u8(u32 address)
 		//TODO - This really probably return the same as other unused IO
 		if((nds7_spi.cnt & 0x8000) == 0) { return 0; }
 
+		//Special handling for microphone input
+		if((touchscreen_state == 0x0C) || (touchscreen_state == 0x0D))
+		{
+			return (address & 0x1) ? (apu_stat->mic_out >> 8) : apu_stat->mic_out;
+		} 
+
 		//Return SPIDATA
 		u8 addr_shift = (address & 0x1) << 3;
 		return ((nds7_spi.data >> addr_shift) & 0xFF);
@@ -1209,8 +1227,8 @@ void NTR_MMU::write_u8(u32 address, u8 value)
 					case NDS_GXFIFO+1:
 					case NDS_GXFIFO+2:
 					case NDS_GXFIFO+3:
-						memory_map[address] = value;
-						gx_fifo_entry = ((memory_map[NDS_GXFIFO+3] << 24) | (memory_map[NDS_GXFIFO+2] << 16) | (memory_map[NDS_GXFIFO+1] << 8) | memory_map[NDS_GXFIFO]);
+						gx_fifo_mem[address & 0x03] = value;
+						gx_fifo_entry = (gx_fifo_mem[3] << 24) | (gx_fifo_mem[2] << 16) | (gx_fifo_mem[1] << 8) | gx_fifo_mem[0];
 
 						if(address == NDS_GXFIFO)
 						{
@@ -1275,10 +1293,10 @@ void NTR_MMU::write_u8(u32 address, u8 value)
 							{
 								if(gx_fifo_param_length)
 								{
-									lcd_3D_stat->command_parameters[lcd_3D_stat->parameter_index++] = memory_map[NDS_GXFIFO+3];
-									lcd_3D_stat->command_parameters[lcd_3D_stat->parameter_index++] = memory_map[NDS_GXFIFO+2];
-									lcd_3D_stat->command_parameters[lcd_3D_stat->parameter_index++] = memory_map[NDS_GXFIFO+1];
-									lcd_3D_stat->command_parameters[lcd_3D_stat->parameter_index++] = memory_map[NDS_GXFIFO];
+									lcd_3D_stat->command_parameters[lcd_3D_stat->parameter_index++] = gx_fifo_mem[3];
+									lcd_3D_stat->command_parameters[lcd_3D_stat->parameter_index++] = gx_fifo_mem[2];
+									lcd_3D_stat->command_parameters[lcd_3D_stat->parameter_index++] = gx_fifo_mem[1];
+									lcd_3D_stat->command_parameters[lcd_3D_stat->parameter_index++] = gx_fifo_mem[0];
 									gx_fifo_param_length--;
 								}
 
@@ -6471,7 +6489,7 @@ void NTR_MMU::process_touchscreen()
 
 		//Read AUX Input Byte 1
 		case 0xC:
-			if(nds7_spi.data & 0x4) { }
+			if(nds7_spi.data & 0x4) { process_microphone(); }
 			else { nds7_spi.data = 0x0; }
 
 			touchscreen_state++;
@@ -6502,6 +6520,34 @@ void NTR_MMU::process_touchscreen()
 			break;
 
 		default: nds7_spi.data = 0;
+	}
+}
+
+/****** Handles microphone output when polling via NDS7 SPI ******/
+void NTR_MMU::process_microphone()
+{
+	switch(config::mic_device)
+	{
+		case MIC_NONE:
+			apu_stat->mic_out = 0;
+			break;
+
+		case MIC_NDS:
+			break;
+
+		case MIC_WAV_FILE:
+			break;
+
+		case MIC_NOISE:
+			apu_stat->mic_out = (rand() % 0xFF);
+			break;
+
+		case MIC_WANTAME:
+			wantame_scanner_process();
+			break;
+
+		case MIC_WAVE_SCANNER:
+			break;
 	}
 }
 
@@ -6884,6 +6930,7 @@ bool NTR_MMU::mmu_read(u32 offset, std::string filename)
 	//Serialize GX data from save state
 	file.read((char*)&gx_fifo_entry, sizeof(gx_fifo_entry));
 	file.read((char*)&gx_fifo_param_length, sizeof(gx_fifo_param_length));
+	file.read((char*)&gx_fifo_mem, sizeof(gx_fifo_mem));
 
 	file.read((char*)&temp_size, sizeof(temp_size));
 	while(!nds9_gx_fifo.empty()) { nds9_gx_fifo.pop(); }
@@ -7062,6 +7109,7 @@ bool NTR_MMU::mmu_write(std::string filename)
 	//Serialize GX data to save state
 	file.write((char*)&gx_fifo_entry, sizeof(gx_fifo_entry));
 	file.write((char*)&gx_fifo_param_length, sizeof(gx_fifo_param_length));
+	file.write((char*)&gx_fifo_mem, sizeof(gx_fifo_mem));
 
 	std::queue <u32> temp_q3(nds9_gx_fifo);
 	temp_word = temp_q3.size();
@@ -7163,6 +7211,7 @@ u32 NTR_MMU::size()
 
 	mmu_size += sizeof(gx_fifo_entry);
 	mmu_size += sizeof(gx_fifo_param_length);
+	mmu_size += sizeof(gx_fifo_mem);
 
 	mmu_size += (4 + (nds9_gx_fifo.size() * 4));
 

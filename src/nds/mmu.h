@@ -86,7 +86,9 @@ class NTR_MMU
 	std::vector <u8> save_data;
 	std::vector <u8> nds7_vwram;
 
-	std::vector<u32> capture_buffer;
+	std::vector <u32> capture_buffer;
+
+	u8 gx_fifo_mem[4];
 	
 	//NDS7 IPC FIFO
 	struct nds7_interprocess
@@ -246,6 +248,14 @@ class NTR_MMU
 		bool oid_reset;
 	} magic_reader;
 
+	//Wantame Card Scanner
+	struct wantame_card_scanner
+	{
+		u32 index;
+		std::string barcode;
+		std::vector <u8> data;
+	} wcs;	
+	
 	//NTR-027
 	struct activity_meter
 	{
@@ -448,6 +458,7 @@ class NTR_MMU
 	void process_card_bus();
 	void process_firmware();
 	void process_touchscreen();
+	void process_microphone();
 	void write_rtc();
 	u8 read_rtc();
 	void setup_default_firmware();
@@ -480,6 +491,12 @@ class NTR_MMU
 	//Slot-2 device functions
 	bool slot2_hcv_load_barcode(std::string filename);
 	void magic_reader_process();
+
+	//Microphone device functions
+	void wantame_scanner_process();
+	void wantame_scanner_set_barcode();
+	void wantame_scanner_set_pulse(u32 lo, u32 hi);
+	bool wantame_scanner_load_barcode(std::string filename);
 
 	void parse_header();
 

@@ -40,6 +40,7 @@ namespace config
 	std::string external_card_file = "";
 	std::string external_image_file = "";
 	std::string external_data_file = "";
+	std::string raw_barcode = "";
 	std::vector <std::string> recent_files;
 	std::vector <std::string> cli_args;
 	std::vector <std::string> bin_files;
@@ -114,6 +115,7 @@ namespace config
 
 	u32 sio_device = 0;
 	u32 ir_device = 0;
+	u32 mic_device = 0;
 	u16 mpos_id = 0;
 	u32 utp_steps = 0;
 	u32 magic_reader_id = 0x500000;
@@ -1237,6 +1239,9 @@ bool parse_ini_file()
 		//Emulated IR device
 		if(!parse_ini_number(ini_item, "#ir_device", config::ir_device, ini_opts, x, 0, 10)) { return false; }
 
+		//Emulated microphone device
+		if(!parse_ini_number(ini_item, "#mic_device", config::mic_device, ini_opts, x, 0, 5)) { return false; }
+
 		//Emulated Slot1 device
 		if(!parse_ini_number(ini_item, "#slot1_device", config::nds_slot1_device, ini_opts, x, 0, 1)) { return false; }
 
@@ -2067,6 +2072,14 @@ bool save_ini_file()
 			line_pos = output_count[x];
 
 			output_lines[line_pos] = "[#ir_device:" + util::to_str(config::ir_device) + "]";
+		}
+
+		//Emulated microphone device
+		if(ini_item == "#ir_device")
+		{
+			line_pos = output_count[x];
+
+			output_lines[line_pos] = "[#mic_device:" + util::to_str(config::mic_device) + "]";
 		}
 
 		//Emulated Slot1 device

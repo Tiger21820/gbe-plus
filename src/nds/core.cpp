@@ -1005,12 +1005,20 @@ void NTR_core::handle_hotkey(SDL_Event& event)
 
 	//Initiate various communication functions
 	//HCV-1000 - Swipe barcode
+	//Wantame Card Scanner - Swipe barcode
 	else if((event.type == SDL_KEYDOWN) && (event.key.keysym.sym == SDLK_F11))
 	{
 		switch(core_mmu.current_slot2_device)
 		{
 			case NTR_MMU::SLOT2_HCV_1000:
 				core_mmu.hcv.cnt &= ~0x80;
+				break;
+		}
+
+		switch(config::mic_device)
+		{
+			case MIC_WANTAME:
+				core_mmu.wantame_scanner_set_barcode();
 				break;
 		}
 	}
@@ -1050,6 +1058,13 @@ void NTR_core::handle_hotkey(int input, bool pressed)
 			case NTR_MMU::SLOT2_HCV_1000:
 				core_mmu.slot2_hcv_load_barcode(config::external_card_file);
 				core_mmu.hcv.cnt &= ~0x80;
+				break;
+		}
+
+		switch(config::mic_device)
+		{
+			case MIC_WANTAME:
+				core_mmu.wantame_scanner_set_barcode();
 				break;
 		}
 	}

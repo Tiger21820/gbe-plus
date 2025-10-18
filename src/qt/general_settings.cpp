@@ -161,7 +161,7 @@ gen_settings::gen_settings(QWidget *parent) : QDialog(parent)
 
 	//General settings - Emulated SIO device
 	QWidget* sio_set = new QWidget(general);
-	QLabel* sio_label = new QLabel("Serial IO Device", sio_set);
+	QLabel* sio_label = new QLabel("Serial IO Device : ", sio_set);
 	sio_dev = new QComboBox(sio_set);
 	sio_dev->setToolTip("Changes the emulated Serial Input-Output device connected to the emulated Game Boy");
 	sio_dev->addItem("None");
@@ -198,7 +198,7 @@ gen_settings::gen_settings(QWidget *parent) : QDialog(parent)
 
 	//General settings - Emulated IR device
 	QWidget* ir_set = new QWidget(general);
-	QLabel* ir_label = new QLabel("Infrared Device", ir_set);
+	QLabel* ir_label = new QLabel("Infrared Device : ", ir_set);
 	ir_dev = new QComboBox(ir_set);
 	ir_dev->setToolTip("Changes the emulated IR device that will communicate with the emulated Game Boy");
 	ir_dev->addItem("None");
@@ -223,7 +223,7 @@ gen_settings::gen_settings(QWidget *parent) : QDialog(parent)
 
 	//General settings - Emulated Slot-2 device
 	QWidget* slot2_set = new QWidget(general);
-	QLabel* slot2_label = new QLabel("Slot-2 Device", slot2_set);
+	QLabel* slot2_label = new QLabel("Slot-2 Device : ", slot2_set);
 	slot2_dev = new QComboBox(slot2_set);
 	slot2_dev->setToolTip("Changes the emulated Slot-2 device inserted into an NDS");
 	slot2_dev->addItem("Auto");
@@ -244,6 +244,26 @@ gen_settings::gen_settings(QWidget *parent) : QDialog(parent)
 	slot2_layout->addWidget(slot2_dev, 1, Qt::AlignLeft);
 	slot2_layout->addWidget(config_slot2, 0, Qt::AlignRight);
 	slot2_set->setLayout(slot2_layout);
+
+	//General settings - Emulated microphone device (NDS)
+	QWidget* mic_set = new QWidget(general);
+	QLabel* mic_label = new QLabel("Microphone Device : ", mic_set);
+	mic_dev = new QComboBox(mic_set);
+	mic_dev->setToolTip("Changes the emulated microphone device for the NDS");
+	mic_dev->addItem("None");
+	mic_dev->addItem("NDS Microphone");
+	mic_dev->addItem("WAV File");
+	mic_dev->addItem("Noise");
+	mic_dev->addItem("Wantame Card Scanner");
+	mic_dev->addItem("Wave Scanner");
+
+	config_mic = new QPushButton("Configure");
+
+	QHBoxLayout* mic_layout = new QHBoxLayout;
+	mic_layout->addWidget(mic_label, 0, Qt::AlignLeft);
+	mic_layout->addWidget(mic_dev, 1, Qt::AlignLeft);
+	mic_layout->addWidget(config_mic, 0, Qt::AlignRight);
+	mic_set->setLayout(mic_layout);
 
 	//General settings - Emulated CPU Speed
 	QWidget* overclock_set = new QWidget(general);
@@ -279,6 +299,7 @@ gen_settings::gen_settings(QWidget *parent) : QDialog(parent)
 	gen_layout->addWidget(sio_set);
 	gen_layout->addWidget(ir_set);
 	gen_layout->addWidget(slot2_set);
+	gen_layout->addWidget(mic_set);
 	gen_layout->addWidget(special_cart_set);
 	gen_layout->addWidget(overclock_set);
 	gen_layout->addWidget(bios_set);
@@ -1449,6 +1470,32 @@ gen_settings::gen_settings(QWidget *parent) : QDialog(parent)
 	min_bios_layout->addWidget(min_bios_button);
 	min_bios_set->setLayout(min_bios_layout);
 
+	//Path settings - NDS ARM7 BIOS
+	QWidget* arm7_bios_set = new QWidget(paths);
+	arm7_bios_label = new QLabel("NDS ARM7 BIOS :  ");
+	QPushButton* arm7_bios_button = new QPushButton("Browse");
+	arm7_bios = new QLineEdit(paths);
+
+	QHBoxLayout* arm7_bios_layout = new QHBoxLayout;
+	arm7_bios_layout->setAlignment(Qt::AlignTop | Qt::AlignLeft);
+	arm7_bios_layout->addWidget(arm7_bios_label);
+	arm7_bios_layout->addWidget(arm7_bios);
+	arm7_bios_layout->addWidget(arm7_bios_button);
+	arm7_bios_set->setLayout(arm7_bios_layout);
+
+	//Path settings - NDS ARM9 BIOS
+	QWidget* arm9_bios_set = new QWidget(paths);
+	arm9_bios_label = new QLabel("NDS ARM9 BIOS :  ");
+	QPushButton* arm9_bios_button = new QPushButton("Browse");
+	arm9_bios = new QLineEdit(paths);
+
+	QHBoxLayout* arm9_bios_layout = new QHBoxLayout;
+	arm9_bios_layout->setAlignment(Qt::AlignTop | Qt::AlignLeft);
+	arm9_bios_layout->addWidget(arm9_bios_label);
+	arm9_bios_layout->addWidget(arm9_bios);
+	arm9_bios_layout->addWidget(arm9_bios_button);
+	arm9_bios_set->setLayout(arm9_bios_layout);
+
 	//Path settings - System Firmware
 	QWidget* nds_firmware_set = new QWidget(paths);
 	nds_firmware_label = new QLabel("NDS Firmware :  ");
@@ -1507,6 +1554,8 @@ gen_settings::gen_settings(QWidget *parent) : QDialog(parent)
 	paths_layout->addWidget(gbc_bios_set);
 	paths_layout->addWidget(gba_bios_set);
 	paths_layout->addWidget(min_bios_set);
+	paths_layout->addWidget(arm7_bios_set);
+	paths_layout->addWidget(arm9_bios_set);
 	paths_layout->addWidget(nds_firmware_set);
 	paths_layout->addWidget(screenshot_set);
 	paths_layout->addWidget(game_saves_set);
@@ -1530,6 +1579,7 @@ gen_settings::gen_settings(QWidget *parent) : QDialog(parent)
 	connect(sio_dev, SIGNAL(currentIndexChanged(int)), this, SLOT(sio_dev_change()));
 	connect(ir_dev, SIGNAL(currentIndexChanged(int)), this, SLOT(ir_dev_change()));
 	connect(slot2_dev, SIGNAL(currentIndexChanged(int)), this, SLOT(slot2_dev_change()));
+	connect(mic_dev, SIGNAL(currentIndexChanged(int)), this, SLOT(mic_dev_change()));
 	connect(overclock, SIGNAL(currentIndexChanged(int)), this, SLOT(overclock_change()));
 	connect(auto_patch, SIGNAL(stateChanged(int)), this, SLOT(set_patches()));
 	connect(edit_cheats, SIGNAL(clicked()), this, SLOT(show_cheats()));
@@ -1537,6 +1587,7 @@ gen_settings::gen_settings(QWidget *parent) : QDialog(parent)
 	connect(config_sio, SIGNAL(clicked()), this, SLOT(show_sio_config()));
 	connect(config_ir, SIGNAL(clicked()), this, SLOT(show_ir_config()));
 	connect(config_slot2, SIGNAL(clicked()), this, SLOT(show_slot2_config()));
+	connect(config_mic, SIGNAL(clicked()), this, SLOT(show_mic_config()));
 	connect(ogl, SIGNAL(stateChanged(int)), this, SLOT(set_ogl()));
 	connect(screen_scale, SIGNAL(currentIndexChanged(int)), this, SLOT(screen_scale_change()));
 	connect(aspect_ratio, SIGNAL(stateChanged(int)), this, SLOT(aspect_ratio_change()));
@@ -1580,6 +1631,8 @@ gen_settings::gen_settings(QWidget *parent) : QDialog(parent)
 	connect(gbc_bios_button, SIGNAL(clicked()), paths_mapper, SLOT(map()));
 	connect(gba_bios_button, SIGNAL(clicked()), paths_mapper, SLOT(map()));
 	connect(min_bios_button, SIGNAL(clicked()), paths_mapper, SLOT(map()));
+	connect(arm7_bios_button, SIGNAL(clicked()), paths_mapper, SLOT(map()));
+	connect(arm9_bios_button, SIGNAL(clicked()), paths_mapper, SLOT(map()));
 	connect(nds_firmware_button, SIGNAL(clicked()), paths_mapper, SLOT(map()));
 	connect(screenshot_button, SIGNAL(clicked()), paths_mapper, SLOT(map()));
 	connect(game_saves_button, SIGNAL(clicked()), paths_mapper, SLOT(map()));
@@ -1590,11 +1643,13 @@ gen_settings::gen_settings(QWidget *parent) : QDialog(parent)
 	paths_mapper->setMapping(gbc_bios_button, 1);
 	paths_mapper->setMapping(gba_bios_button, 2);
 	paths_mapper->setMapping(min_bios_button, 3);
-	paths_mapper->setMapping(nds_firmware_button, 4);
-	paths_mapper->setMapping(screenshot_button, 5);
-	paths_mapper->setMapping(game_saves_button, 6);
-	paths_mapper->setMapping(cheats_path_button, 7);
-	paths_mapper->setMapping(vc_path_button, 8);
+	paths_mapper->setMapping(arm7_bios_button, 4);
+	paths_mapper->setMapping(arm9_bios_button, 5);
+	paths_mapper->setMapping(nds_firmware_button, 6);
+	paths_mapper->setMapping(screenshot_button, 7);
+	paths_mapper->setMapping(game_saves_button, 8);
+	paths_mapper->setMapping(cheats_path_button, 9);
+	paths_mapper->setMapping(vc_path_button, 10);
 	connect(paths_mapper, SIGNAL(mapped(int)), this, SLOT(set_paths(int)));
 
 	QSignalMapper* button_config = new QSignalMapper(this);
@@ -1828,6 +1883,7 @@ gen_settings::gen_settings(QWidget *parent) : QDialog(parent)
 
 	ubisoft_pedometer_menu = new utp_menu;
 	magic_reader_menu = new mr_menu;
+	wantame_menu = new wcs_menu;
 
 	get_chip_list();
 
@@ -1893,6 +1949,21 @@ void gen_settings::set_ini_options()
 	else
 	{
 		config_slot2->setEnabled(false);
+	}
+
+
+	//Emulated microphone device
+	mic_dev->setCurrentIndex(config::mic_device);
+
+	if((config::mic_device == MIC_WAV_FILE) || (config::mic_device == MIC_WANTAME)
+	|| (config::mic_device == MIC_WAVE_SCANNER)) 
+	{ 
+		config_mic->setEnabled(true);
+	}
+
+	else
+	{
+		config_mic->setEnabled(false);
 	}
 
 	//Emulated CPU speed
@@ -2109,11 +2180,13 @@ void gen_settings::set_ini_options()
 	QString path_2(QString::fromStdString(config::gbc_bios_path));
 	QString path_3(QString::fromStdString(config::agb_bios_path));
 	QString path_4(QString::fromStdString(config::min_bios_path));
-	QString path_5(QString::fromStdString(config::nds_firmware_path));
-	QString path_6(QString::fromStdString(config::ss_path));
-	QString path_7(QString::fromStdString(config::save_path));
-	QString path_8(QString::fromStdString(config::cheats_path));
-	QString path_9(QString::fromStdString(config::vc_file));
+	QString path_5(QString::fromStdString(config::nds7_bios_path));
+	QString path_6(QString::fromStdString(config::nds9_bios_path));
+	QString path_7(QString::fromStdString(config::nds_firmware_path));
+	QString path_8(QString::fromStdString(config::ss_path));
+	QString path_9(QString::fromStdString(config::save_path));
+	QString path_10(QString::fromStdString(config::cheats_path));
+	QString path_11(QString::fromStdString(config::vc_file));
 
 	//Rumble
 	if(config::use_haptics) { rumble_on->setChecked(true); }
@@ -2192,11 +2265,13 @@ void gen_settings::set_ini_options()
 	gbc_bios->setText(path_2);
 	gba_bios->setText(path_3);
 	min_bios->setText(path_4);
-	nds_firmware->setText(path_5);
-	screenshot->setText(path_6);
-	game_saves->setText(path_7);
-	cheats_path->setText(path_8);
-	vc_path->setText(path_9);
+	arm7_bios->setText(path_5);
+	arm9_bios->setText(path_6);
+	nds_firmware->setText(path_7);
+	screenshot->setText(path_8);
+	game_saves->setText(path_9);
+	cheats_path->setText(path_10);
+	vc_path->setText(path_11);
 }
 
 /****** Toggles whether to use the Boot ROM or BIOS ******/
@@ -2282,6 +2357,23 @@ void gen_settings::slot2_dev_change()
 	else
 	{
 		config_slot2->setEnabled(false);
+	}
+}
+
+/****** Changes the emulated microphone device ******/
+void gen_settings::mic_dev_change()
+{
+	config::mic_device = mic_dev->currentIndex();
+
+	if((config::mic_device == MIC_WAV_FILE) || (config::mic_device == MIC_WANTAME)
+	|| (config::mic_device == MIC_WAVE_SCANNER)) 
+	{ 
+		config_mic->setEnabled(true);
+	}
+
+	else
+	{
+		config_mic->setEnabled(false);
 	}
 }
 
@@ -2423,6 +2515,32 @@ void gen_settings::show_slot2_config()
 
 		case NTR_S2_MAGIC_READER:
 			magic_reader_menu->show();
+			break;
+	}
+}
+
+/****** Displays relevant microphone configuration window ******/
+void gen_settings::show_mic_config()
+{
+	switch(config::mic_device)
+	{
+		case MIC_NONE:
+			break;
+
+		case MIC_NDS:
+			break;
+
+		case MIC_WAV_FILE:
+			break;
+
+		case MIC_NOISE:
+			break;
+
+		case MIC_WANTAME:
+			wantame_menu->show();
+			break;
+
+		case MIC_WAVE_SCANNER:
 			break;
 	}
 }
@@ -2648,7 +2766,7 @@ void gen_settings::set_paths(int index)
 	QString path;
 
 	//Open file browser for Boot ROMs, BIOS, Firmware, cheats,
-	if((index < 4) || (index >= 6))
+	if((index != 7) && (index != 8))
 	{
 		path = QFileDialog::getOpenFileName(this, tr("Open"), "", tr("All files (*)"));
 		if(path.isNull()) { return; }
@@ -2657,21 +2775,7 @@ void gen_settings::set_paths(int index)
 	//Open folder browser for screenshots, game saves
 	else
 	{
-		//Open the data folder
-		//On Linux or Unix, this is supposed to be a hidden folder, so we need a custom dialog
-		//This uses relative paths, but for game saves we need full path, so ignore if index is 8
-		if((index >= 6) && (index != 8))
-		{
-			data_folder->open_data_folder();			
-
-			while(!data_folder->finish) { QApplication::processEvents(); }
-	
-			path = data_folder->directory().path();
-			path = data_folder->path.relativeFilePath(path);
-		}
-
-		else { path = QFileDialog::getExistingDirectory(this, tr("Open"), "", QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks); }
-		
+		path = QFileDialog::getExistingDirectory(this, tr("Open"), "", QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
 		if(path.isNull()) { return; }	
 
 		//Make sure path is complete, e.g. has the correct separator at the end
@@ -2707,21 +2811,31 @@ void gen_settings::set_paths(int index)
 			break;
 
 		case 4:
+			config::nds7_bios_path = path.toStdString();
+			arm7_bios->setText(path);
+			break;
+
+		case 5:
+			config::nds9_bios_path = path.toStdString();
+			arm9_bios->setText(path);
+			break;
+
+		case 6:
 			config::nds_firmware_path = path.toStdString();
 			nds_firmware->setText(path);
 			break;
 
-		case 5:
+		case 7:
 			config::ss_path = path.toStdString();
 			screenshot->setText(path);
 			break;
 
-		case 6:
+		case 8:
 			config::save_path = path.toStdString();
 			game_saves->setText(path);
 			break;
 
-		case 7:
+		case 9:
 			config::cheats_path = path.toStdString();
 			cheats_path->setText(path);
 
@@ -2731,7 +2845,7 @@ void gen_settings::set_paths(int index)
 
 			break;
 
-		case 8:
+		case 10:
 			config::vc_file = path.toStdString();
 			vc_path->setText(path);
 			break;

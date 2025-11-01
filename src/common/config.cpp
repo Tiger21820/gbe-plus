@@ -650,6 +650,12 @@ void validate_system_type()
 	else if(ext == ".nds") { config::gb_type = SYS_NDS; }
 	else if(ext == ".min") { config::gb_type = SYS_MIN; }
 
+	else if(ext == ".am3")
+	{
+		config::gb_type = SYS_GBA;
+		config::cart_type = AGB_AM3;
+	}
+
 	//Force GBC mode if system type is set to GBA, but a GB/GBC game is loaded
 	else if((ext != ".gba") && (config::gb_type == SYS_GBA)) 
 	{
@@ -693,6 +699,12 @@ u8 get_system_type_from_file(std::string filename)
 	if(ext == ".gba") { gb_type = SYS_GBA; }
 	else if(ext == ".nds") { gb_type = SYS_NDS; }
 	else if(ext == ".min") { gb_type = SYS_MIN; }
+
+	else if(ext == ".am3")
+	{
+		config::gb_type = SYS_GBA;
+		config::cart_type = AGB_AM3;
+	}
 
 	//Force GBC mode if system type is set to GBA, but a GB/GBC game is loaded
 	else if((ext != ".gba") && (gb_type == SYS_GBA))
@@ -2473,6 +2485,7 @@ bool save_ini_file()
 			if(config::fragment_shader == (config::data_path + "shaders/fragment.fs")) { config::fragment_shader = "fragment.fs"; }
 			else if(config::fragment_shader == (config::data_path + "shaders/2xBR.fs")) { config::fragment_shader = "2xBR.fs"; }
 			else if(config::fragment_shader == (config::data_path + "shaders/4xBR.fs")) { config::fragment_shader = "4xBR.fs"; }
+			else if(config::fragment_shader == (config::data_path + "shaders/8_bit.fs")) { config::fragment_shader = "8_bit.fs"; }
 			else if(config::fragment_shader == (config::data_path + "shaders/bad_bloom.fs")) { config::fragment_shader = "bad_bloom.fs"; }
 			else if(config::fragment_shader == (config::data_path + "shaders/badder_bloom.fs")) { config::fragment_shader = "badder_bloom.fs"; }
 			else if(config::fragment_shader == (config::data_path + "shaders/chrono.fs")) { config::fragment_shader = "chrono.fs"; }
@@ -2482,6 +2495,7 @@ bool save_ini_file()
 			else if(config::fragment_shader == (config::data_path + "shaders/grayscale.fs")) { config::fragment_shader = "grayscale.fs"; }
 			else if(config::fragment_shader == (config::data_path + "shaders/lcd_mode.fs")) { config::fragment_shader = "lcd_mode.fs"; }
 			else if(config::fragment_shader == (config::data_path + "shaders/pastel.fs")) { config::fragment_shader = "pastel.fs"; }
+			else if(config::fragment_shader == (config::data_path + "shaders/pixelate.fs")) { config::fragment_shader = "pixelate.fs"; }
 			else if(config::fragment_shader == (config::data_path + "shaders/scale2x.fs")) { config::fragment_shader = "scale2x.fs"; }
 			else if(config::fragment_shader == (config::data_path + "shaders/scale3x.fs")) { config::fragment_shader = "scale3x.fs"; }
 			else if(config::fragment_shader == (config::data_path + "shaders/sepia.fs")) { config::fragment_shader = "sepia.fs"; }

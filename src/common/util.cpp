@@ -8,11 +8,25 @@
 //
 // Provides miscellaneous utilities for the emulator
 
+#ifndef GL3_PROTOTYPES
+#define GL3_PROTOTYPES 1
+#endif
+
+#ifndef GL_GLEXT_PROTOTYPES
+#define GL_GLEXT_PROTOTYPES 1
+#endif
+
+#ifdef GBE_GLEW
+#include "GL/glew.h"
+#endif
+
 #include <iostream>
 #include <fstream>
 #include <sstream>
 #include <filesystem>
 
+#include "SDL_opengl.h"
+#include "config.h"
 #include "util.h"
 
 namespace util
@@ -950,21 +964,63 @@ SDL_Surface* load_icon(std::string filename)
 		SDL_SetColorKey(output, SDL_TRUE, 0xFF00FF00);
 	}
 
+	SDL_FreeSurface(source);
+
 	return output;
 }
 
 /****** Saves an image file as BMP or PNG ******/
 bool save_image(SDL_Surface* src, std::string filename)
 {
+	SDL_Surface* src_copy = src;
+	bool result = false;
+
+	//Special handling for OpenGL for SDL/CLI version
+	//Manually grab data by glReadPixels for SDL_Surface conversion
+	if(config::use_opengl)
+	{
+		std::vector<u8> temp_img;
+		std::vector<u8> final_img;
+		temp_img.resize(config::win_width * config::win_height * 4, 0);
+		glReadPixels(0, 0, config::win_width, config::win_height, GL_BGRA, GL_UNSIGNED_BYTE, temp_img.data());
+
+		//Vertically invert pixel data before further processing
+		for(s32 y = (config::win_height - 1); y >= 0; y--)
+		{
+			for(u32 x = 0; x < (config::win_width * 4); x++)
+			{
+				u32 current_pos = (y * config::win_width * 4) + x;
+				final_img.push_back(temp_img[current_pos]);
+			}
+		}
+
+		src_copy = SDL_CreateRGBSurface(SDL_SWSURFACE, config::win_width, config::win_height, 32, 0, 0, 0, 0);
+
+		if(SDL_MUSTLOCK(src_copy)){ SDL_LockSurface(src_copy); }
+		u8* out_pixel_data = (u8*)src_copy->pixels;
+
+		for(u32 x = 0; x < final_img.size(); x++)
+		{
+			out_pixel_data[x] = final_img[x];
+		}
+
+		if(SDL_MUSTLOCK(src_copy)){ SDL_UnlockSurface(src_copy); }
+	}
+
 	#ifdef GBE_IMAGE_FORMATS
 	filename += ".png";
-	return IMG_SavePNG(src, filename.c_str());
+	result = IMG_SavePNG(src_copy, filename.c_str());
 	#endif
 		
 	#ifndef GBE_IMAGE_FORMATS
 	filename += ".bmp";
-	return SDL_SaveBMP(src, filename.c_str());
+	result = SDL_SaveBMP(src_copy, filename.c_str());
 	#endif
+
+	//Make sure to free surface *only* if it's a local copy!
+	if(config::use_opengl) { SDL_FreeSurface(src_copy); }
+
+	return result;
 }
 
 /****** Converts an integer into a BCD ******/
@@ -1314,6 +1370,159 @@ bool patch_ups(std::string filename, std::vector<u8>& mem_map, u32 mem_pos, u32 
 	patch_data.clear();
 
 	return true;
+}
+
+/****** Applies an IPS patch to a ROM loaded in memory ******/
+bool patch_bps(std::string filename, std::vector<u8>& mem_map, u32 mem_pos, u32 max_size)
+{
+	std::ifstream patch_file(filename.c_str(), std::ios::binary);
+
+	if(!patch_file.is_open()) 
+	{ 
+		std::cout<<"MMU::" << filename << " BPS patch file could not be opened. Check file path or permissions. \n";
+		return false;
+	}
+
+	//Get the file size
+	patch_file.seekg(0, patch_file.end);
+	u32 file_size = patch_file.tellg();
+	patch_file.seekg(0, patch_file.beg);
+
+	std::vector<u8> patch_data;
+	patch_data.resize(file_size, 0);
+
+	//Read patch file into buffer
+	u8* ex_patch = &patch_data[0];
+	patch_file.read((char*)ex_patch, file_size);
+
+	//Check header for PATCH string
+	if((patch_data[0] != 0x42) || (patch_data[1] != 0x50) || (patch_data[2] != 0x53) || (patch_data[3] != 0x31))
+	{
+		std::cout<<"MMU::" << filename << " BPS patch file has invalid header\n";
+		return false;
+	}
+
+	bool end_of_file = false;
+	u64 patch_pos = 4;
+	u64 patch_end = patch_data.size() - 12;
+
+	s64 source_offset = 0;
+	s64 target_offset = 0;
+	u32 output_pos = 0;
+
+	u64 source_size = get_bps_num(patch_data, patch_pos);
+	u64 target_size = get_bps_num(patch_data, patch_pos);
+	u64 meta_size = get_bps_num(patch_data, patch_pos);
+
+	patch_pos += meta_size;
+
+	std::vector<u8> final_data;
+	final_data.resize(target_size, 0x00);
+
+	//Process all BPS commands until end of patch data is reached
+	while(patch_pos < patch_end)
+	{
+		u64 patch_bytes = get_bps_num(patch_data, patch_pos);
+		u64 len = (patch_bytes >> 2) + 1;
+		s64 offset = 0;
+		u8 cmd = patch_bytes & 0x3;
+
+		switch(cmd)
+		{
+			//Source Read
+			case 0x00:
+				while(len--)
+				{
+					final_data[output_pos] = mem_map[mem_pos + output_pos];
+					output_pos++;
+				}
+				
+				break;
+
+			//Target Read
+			case 0x01:
+				while(len--)
+				{
+					final_data[output_pos++] = patch_data[patch_pos++];
+				}
+
+				break;
+
+			//Source Copy
+			case 0x02:
+				patch_bytes = get_bps_num(patch_data, patch_pos);
+				offset = (patch_bytes & 0x01) ? -1 : 1;
+				offset *= (patch_bytes >> 1);
+				source_offset += offset;
+
+				while(len--)
+				{
+					final_data[output_pos++] = mem_map[mem_pos + source_offset++];
+				}
+				
+				break;
+
+			//Target Copy
+			case 0x03:
+				patch_bytes = get_bps_num(patch_data, patch_pos);
+				offset = (patch_bytes & 0x01) ? -1 : 1;
+				offset *= (patch_bytes >> 1);
+				target_offset += offset;
+
+				while(len--)
+				{
+					final_data[output_pos++] = final_data[target_offset++];
+				}
+
+				break;
+		}
+	}
+
+	//Copy patched data to destination in memory map
+	for(u32 x = 0; x < target_size; x++)
+	{
+		mem_map[mem_pos + x] = final_data[x];
+	}
+
+	patch_pos = patch_end + 4;
+	u32 target_checksum = (patch_data[patch_pos] | (patch_data[patch_pos + 1] << 8) | (patch_data[patch_pos + 2] << 16) | (patch_data[patch_pos + 3] << 24));
+	u32 actual_checksum = get_crc32(&final_data[0], target_size);
+
+	if(target_checksum != actual_checksum)
+	{
+		std::cout<<"MMU::Warning - BPS Patched File CRC32 is different than expected.\n";
+		std::cout<<"MMU::Expected Checksum: 0x" << target_checksum << "\n";
+		std::cout<<"MMU::Calculated Checksum: 0x" << actual_checksum << "\n";
+	}
+
+	return true;
+}
+
+/****** Reads a variable-length number from BPS patch data ******/
+u64 get_bps_num(std::vector<u8>& patch_data, u64& pos)
+{
+	bool is_number_finished = false;
+	u64 number = 0;
+	u32 shift = 1;
+
+	while((pos < patch_data.size()) && (!is_number_finished))
+	{
+		u8 patch_byte = patch_data[pos++];
+		number += ((patch_byte & 0x7F) * shift);
+
+		if(patch_byte & 0x80)
+		{
+			is_number_finished = true;
+		}
+
+		else
+		{
+			shift <<= 7;
+			number += shift;
+		}
+	}
+
+	return number;
 }
 
 } //Namespace

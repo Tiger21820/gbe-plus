@@ -142,6 +142,7 @@ void AGB_core::sleep()
 
 		//Hotplug joypad
 		else if((event.type == SDL_JOYDEVICEADDED) && (!core_pad.joy_init)) { core_pad.init(); }
+		else if((event.type == SDL_JOYDEVICEREMOVED) && (core_pad.joy_init)) { core_pad.close_joystick(); }
 
 		//Exit on Joypad IRQ
 		if(core_pad.joypad_irq)
@@ -343,6 +344,7 @@ void AGB_core::run_core()
 
 			//Hotplug joypad
 			else if((event.type == SDL_JOYDEVICEADDED) && (!core_pad.joy_init)) { core_pad.init(); }
+			else if((event.type == SDL_JOYDEVICEREMOVED) && (core_pad.joy_init)) { core_pad.close_joystick(); }
 		}
 
 		//Run the CPU
@@ -554,19 +556,13 @@ void AGB_core::handle_hotkey(SDL_Event& event)
 	//Screenshot on F9
 	else if((event.type == SDL_KEYDOWN) && (event.key.keysym.sym == SDLK_F9)) 
 	{
-		std::stringstream save_stream;
 		std::string save_name = config::ss_path;
+		std::string hex_ticks = util::to_hex_str(SDL_GetTicks()).substr(2);
 
-		//Prefix SDL Ticks to screenshot name
-		save_stream << SDL_GetTicks();
-		save_name += save_stream.str();
-		save_stream.str(std::string());
+		//Filename = Date + Ticks
+		while(hex_ticks.length() < 8) { hex_ticks = "0" + hex_ticks; }
+		save_name += (util::get_long_date() + "_" + hex_ticks);
 
-		//Append random number to screenshot name
-		srand(SDL_GetTicks());
-		save_stream << rand() % 1024 << rand() % 1024 << rand() % 1024;
-	
-		save_name += save_stream.str();
 		util::save_image(core_cpu.controllers.video.final_screen, save_name);
 
 		//OSD

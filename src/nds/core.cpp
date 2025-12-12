@@ -338,6 +338,7 @@ void NTR_core::run_core()
 
 			//Hotplug joypad
 			else if((event.type == SDL_JOYDEVICEADDED) && (!core_pad.joy_init)) { core_pad.init(); }
+			else if((event.type == SDL_JOYDEVICEREMOVED) && (core_pad.joy_init)) { core_pad.close_joystick(); }
 		}
 
 		//Run the CPU
@@ -853,19 +854,13 @@ void NTR_core::handle_hotkey(SDL_Event& event)
 	//Screenshot on F9
 	else if((event.type == SDL_KEYDOWN) && (event.key.keysym.sym == SDLK_F9)) 
 	{
-		std::stringstream save_stream;
-		std::string save_name = "";
+		std::string save_name = config::ss_path;
+		std::string hex_ticks = util::to_hex_str(SDL_GetTicks()).substr(2);
 
-		//Prefix SDL Ticks to screenshot name
-		save_stream << SDL_GetTicks();
-		save_name += save_stream.str();
-		save_stream.str(std::string());
+		//Filename = Date + Ticks
+		while(hex_ticks.length() < 8) { hex_ticks = "0" + hex_ticks; }
+		save_name += (util::get_long_date() + "_" + hex_ticks);
 
-		//Append random number to screenshot name
-		srand(SDL_GetTicks());
-		save_stream << rand() % 1024 << rand() % 1024 << rand() % 1024;
-
-		save_name += save_stream.str();
 		util::save_image(core_cpu_nds9.controllers.video.final_screen, save_name);
 
 		//OSD
@@ -1006,6 +1001,7 @@ void NTR_core::handle_hotkey(SDL_Event& event)
 	//Initiate various communication functions
 	//HCV-1000 - Swipe barcode
 	//Wantame Card Scanner - Swipe barcode
+	//Wave Scanner - Set level / Swipe barcode
 	else if((event.type == SDL_KEYDOWN) && (event.key.keysym.sym == SDLK_F11))
 	{
 		switch(core_mmu.current_slot2_device)
@@ -1019,6 +1015,10 @@ void NTR_core::handle_hotkey(SDL_Event& event)
 		{
 			case MIC_WANTAME:
 				core_mmu.wantame_scanner_set_barcode();
+				break;
+
+			case MIC_WAVE_SCANNER:
+				core_mmu.wave_scanner_set_data();
 				break;
 		}
 	}
@@ -1051,6 +1051,8 @@ void NTR_core::handle_hotkey(int input, bool pressed)
 
 	//Initiate various communication functions
 	//HCV-1000 - Swipe barcode
+	//Wantame Card Scanner - Swipe barcode
+	//Wave Scanner - Set level / Swipe barcode
 	else if((input == SDLK_F11) && (pressed))
 	{
 		switch(core_mmu.current_slot2_device)
@@ -1065,6 +1067,10 @@ void NTR_core::handle_hotkey(int input, bool pressed)
 		{
 			case MIC_WANTAME:
 				core_mmu.wantame_scanner_set_barcode();
+				break;
+
+			case MIC_WAVE_SCANNER:
+				core_mmu.wave_scanner_set_data();
 				break;
 		}
 	}

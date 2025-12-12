@@ -254,7 +254,18 @@ class NTR_MMU
 		u32 index;
 		std::string barcode;
 		std::vector <u8> data;
-	} wcs;	
+	} wcs;
+
+	//Wave Scanner
+	struct starforce_wave_scanner
+	{
+		u32 index;
+		u8 level;
+		u8 type;
+		bool is_data_barcode;
+		std::string barcode;
+		std::vector <u8> data;
+	} wave_scanner;
 	
 	//NTR-027
 	struct activity_meter
@@ -497,6 +508,10 @@ class NTR_MMU
 	void wantame_scanner_set_barcode();
 	void wantame_scanner_set_pulse(u32 lo, u32 hi);
 	bool wantame_scanner_load_barcode(std::string filename);
+
+	void wave_scanner_process();
+	void wave_scanner_set_pulse(u32 hi, u32 lo);
+	void wave_scanner_set_data();
 
 	void parse_header();
 

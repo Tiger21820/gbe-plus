@@ -87,7 +87,7 @@ void DMG_GamePad::init()
 	jstick = SDL_JoystickOpen(config::joy_id);
 	config::joy_sdl_id = SDL_JoystickInstanceID(jstick);
 
-	joy_init = (jstick == NULL) ? true : false;
+	joy_init = (jstick != NULL) ? true : false;
 
 	if((jstick == NULL) && (SDL_NumJoysticks() >= 1)) { std::cout<<"JOY::Could not initialize joystick \n"; }
 	else if((jstick == NULL) && (SDL_NumJoysticks() == 0)) { std::cout<<"JOY::No joysticks detected \n"; return; }
@@ -154,6 +154,17 @@ DMG_GamePad::~DMG_GamePad()
 		config::gbe_joy_b = ddr_joy_mapping[1];
 		config::gbe_joy_right = ddr_joy_mapping[2];
 	}
+}
+
+/****** Close SDL Joystick - Only used for hot plugging ******/
+void DMG_GamePad::close_joystick()
+{
+	joy_init = false;
+	sensor_init = false;
+
+	if(jstick != NULL) { SDL_JoystickClose(jstick); }
+	if(rumble != NULL) { SDL_HapticClose(rumble); }
+	if(gc_sensor != NULL) { SDL_GameControllerClose(gc_sensor); }
 }
 
 /****** Handle Input From Keyboard ******/

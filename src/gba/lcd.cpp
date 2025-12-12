@@ -1456,17 +1456,17 @@ void AGB_LCD::step()
 	//Mode 0 - Scanline rendering
 	if(((lcd_clock % 1232) <= 960) && (lcd_clock < 197120)) 
 	{
-		//Increment scanline count
-		if(mem->memory_map[DISPSTAT] & 0x2)
-		{
-			current_scanline++;
-			mem->write_u16_fast(VCOUNT, current_scanline);
-			scanline_compare();
-		}
-
 		//Change mode
 		if(lcd_mode != 0) 
 		{
+			//Increment scanline count
+			if(mem->memory_map[DISPSTAT] & 0x2)
+			{
+				current_scanline++;
+				mem->write_u16_fast(VCOUNT, current_scanline);
+				scanline_compare();
+			}
+
 			//Update OAM
 			if(lcd_stat.oam_update) { update_oam(); }
 
@@ -1501,14 +1501,6 @@ void AGB_LCD::step()
 				lcd_stat.bg_affine[1].y_pos = lcd_stat.bg_affine[1].y_ref;
 			}
 		}
-
-		//Render scanline data (per-pixel every 4 cycles)
-		if((lcd_clock % 4) == 0) 
-		{
-			render_scanline();
-			if(lcd_stat.current_sfx_type != NORMAL) { apply_sfx(); }
-			scanline_pixel_counter++;
-		}
 	}
 
 	//Mode 1 - H-Blank
@@ -1517,6 +1509,14 @@ void AGB_LCD::step()
 		//Change mode
 		if(lcd_mode != 1) 
 		{
+			//Render scanline data
+			for(u32 x = 0; x < 256; x++) 
+			{
+				render_scanline();
+				if(lcd_stat.current_sfx_type != NORMAL) { apply_sfx(); }
+				scanline_pixel_counter++;
+			}
+
 			//Toggle HBlank flag ON
 			mem->memory_map[DISPSTAT] |= 0x2;
 

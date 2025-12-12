@@ -117,6 +117,15 @@ void NTR_MMU::reset()
 			wcs.index = 0;
 			wantame_scanner_load_barcode(config::external_card_file);
 			break;
+
+		case MIC_WAVE_SCANNER:
+			wave_scanner.data.clear();
+			wave_scanner.barcode = "";
+			wave_scanner.index = 0;
+			wave_scanner.level = 1;
+			wave_scanner.type = 0;
+			wave_scanner.is_data_barcode = false;
+			break;
 	}
 
 	memory_map.clear();
@@ -5374,6 +5383,27 @@ bool NTR_MMU::read_file(std::string filename)
 	//Read data from the ROM file
 	file.read(reinterpret_cast<char*> (&cart_data[0]), file_size);
 
+	//Apply patches to the ROM data
+	if(config::use_patches)
+	{
+		std::string patch_file = util::get_filename_no_ext(filename);
+
+		//Attempt a IPS patch
+		bool patch_pass = util::patch_ips((patch_file + ".ips"), cart_data, 0x00, file_size);
+
+		//Attempt a UPS patch
+		if(!patch_pass)
+		{
+			patch_pass = util::patch_ups((patch_file + ".ups"), cart_data, 0x00, file_size);
+		}
+
+		//Attempt a BPS patch
+		if(!patch_pass)
+		{
+			patch_pass = util::patch_bps((patch_file + ".bps"), cart_data, 0x00, file_size);
+		}		
+	}
+
 	//Copy 368 bytes from header to Main RAM on boot
 	for(u32 x = 0; x < 0x170; x++) { write_u8((0x27FFE00 + x), cart_data[x]); }
 
@@ -6547,6 +6577,7 @@ void NTR_MMU::process_microphone()
 			break;
 
 		case MIC_WAVE_SCANNER:
+			wave_scanner_process();
 			break;
 	}
 }

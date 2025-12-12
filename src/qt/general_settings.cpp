@@ -1886,6 +1886,7 @@ gen_settings::gen_settings(QWidget *parent) : QDialog(parent)
 	ubisoft_pedometer_menu = new utp_menu;
 	magic_reader_menu = new mr_menu;
 	wantame_menu = new wcs_menu;
+	wave_scanner_menu = new wav_menu;
 
 	get_chip_list();
 
@@ -2258,6 +2259,9 @@ void gen_settings::set_ini_options()
 		if(chip_list[x] == init_chip_list[3]) { battle_chip_4->setCurrentIndex(x); }
 	}
 
+	//Wave Scanner Level
+	wave_scanner_menu->level->setValue(config::wave_scanner_level);
+
 	sync_threshold->setValue(config::netplay_sync_threshold);
 	server_port->setValue(config::netplay_server_port);
 	client_port->setValue(config::netplay_client_port);
@@ -2545,6 +2549,7 @@ void gen_settings::show_mic_config()
 			break;
 
 		case MIC_WAVE_SCANNER:
+			wave_scanner_menu->show();
 			break;
 	}
 }

@@ -147,3 +147,119 @@ bool NTR_MMU::wantame_scanner_load_barcode(std::string filename)
 	
 	return true;
 }
+
+void NTR_MMU::wave_scanner_process()
+{
+	if(wave_scanner.data.empty())
+	{
+		apu_stat->mic_out = 0;
+	}
+
+	else
+	{
+		if(wave_scanner.index >= wave_scanner.data.size())
+		{
+			wave_scanner.index = 0;
+			wave_scanner.data.clear();
+			apu_stat->mic_out = 0;
+
+			return;
+		}
+
+		apu_stat->mic_out = wave_scanner.data[wave_scanner.index++];
+	}
+}
+
+void NTR_MMU::wave_scanner_set_data()
+{
+	wave_scanner.data.clear();
+	wave_scanner.is_data_barcode = config::wave_scanner_is_barcode;
+	wave_scanner.type = config::wave_scanner_type;
+
+	u32 final_data = 0;
+	u32 bit = 0x80000000;
+
+	//Generate barcode data
+	if(wave_scanner.is_data_barcode)
+	{
+		//Verify Code-128 C barcode length. *ALWAYS* Fixed 12-chars for Wave Scanner
+		if(wave_scanner.barcode.length() != 12)
+		{
+			return;
+		}
+
+		//Last 3 digits of Code-128 barcode are encoded as 6-bits for final 32-bit value
+		//Uses Bits 8 - 26 of final 32-bit value
+		//Bits 27-32 are constant, however
+		u32 bc1 = 0;
+		u32 bc2 = 0;
+		u32 bc3 = 0;
+
+		util::from_str(wave_scanner.barcode.substr(6, 2), bc1);
+		util::from_str(wave_scanner.barcode.substr(8, 2), bc2);
+		util::from_str(wave_scanner.barcode.substr(10, 2), bc3);
+		
+		final_data = 0x40000000 | (bc1 << 20) | (bc2 << 14) | (bc3 << 8);
+
+		u8 check_1 = (final_data >> 24);
+		u8 check_2 = (final_data >> 16);
+		u8 check_3 = (final_data >> 8);
+
+		//XOR-based check digit occupies LSB
+		final_data |= (check_1 ^ check_2 ^ check_3);
+	}
+
+	//Generate level data
+	else
+	{
+		//Copy most recent level from updated config
+		wave_scanner.level = config::wave_scanner_level;
+
+		//Send 32-bits. MSB 16-bit is always 0x4240
+		u8 lvl_data_1 = 0x42;
+		u8 lvl_data_2 = 0x40;
+		u8 lvl_data_3 = wave_scanner.level;
+
+		//Set Wave Scanner Type
+		switch(wave_scanner.type)
+		{
+			//Leo
+			case 0:
+				lvl_data_3 |= 0x80;
+				break;
+
+			//Pegasus
+			case 1:
+				lvl_data_2 |= 0x01;
+				break;
+
+			//Dragon
+			case 2:
+				lvl_data_2 |= 0x01;
+				lvl_data_3 |= 0x80;
+				break;
+		}
+
+		//XOR-based check digit occupies LSB
+		u8 lvl_data_4 = (lvl_data_1 ^ lvl_data_2 ^ lvl_data_3);				
+		final_data = (lvl_data_1 << 24) | (lvl_data_2 << 16) | (lvl_data_3 << 8) | lvl_data_4;
+	}
+
+	//Generate initial ACK signal
+	wave_scanner_set_pulse(10, 10);
+
+	//Generate signals for barcode or level data
+	for(u32 x = 0; x < 32; x++)
+	{
+		if(final_data & bit) { wave_scanner_set_pulse(6, 8); }
+		else { wave_scanner_set_pulse(3, 8); }
+
+		bit >>= 1;
+	}
+}
+
+void NTR_MMU::wave_scanner_set_pulse(u32 hi, u32 lo)
+{
+	for(u32 x = 0; x < hi; x++) { wave_scanner.data.push_back(0x58); }
+	for(u32 x = 0; x < lo; x++) { wave_scanner.data.push_back(0x00); }
+}

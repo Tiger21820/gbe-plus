@@ -61,7 +61,7 @@ void AGB_GamePad::init()
 	if((jstick == NULL) && (SDL_NumJoysticks() >= 1)) { std::cout<<"JOY::Could not initialize joystick \n"; }
 	else if((jstick == NULL) && (SDL_NumJoysticks() == 0)) { std::cout<<"JOY::No joysticks detected \n"; }
 
-	joy_init = (jstick == NULL) ? true : false;
+	joy_init = (jstick != NULL) ? true : false;
 
 	rumble = NULL;
 
@@ -145,6 +145,17 @@ void AGB_GamePad::init()
 
 /****** GamePad Destructor ******/
 AGB_GamePad::~AGB_GamePad() { } 
+
+/****** Close SDL Joystick - Only used for hot plugging ******/
+void AGB_GamePad::close_joystick()
+{
+	joy_init = false;
+	sensor_init = false;
+
+	if(jstick != NULL) { SDL_JoystickClose(jstick); }
+	if(rumble != NULL) { SDL_HapticClose(rumble); }
+	if(gc_sensor != NULL) { SDL_GameControllerClose(gc_sensor); }
+}
 
 /****** Handle input from keyboard or joystick for processing ******/
 void AGB_GamePad::handle_input(SDL_Event &event)

@@ -1461,23 +1461,48 @@ void main_menu::screenshot()
 {
 	if(main_menu::gbe_plus != NULL)
 	{
-		std::stringstream save_stream;
 		std::string save_name = config::ss_path;
+		std::string hex_ticks = util::to_hex_str(SDL_GetTicks()).substr(2);
 
-		//Prefix SDL Ticks to screenshot name
-		save_stream << SDL_GetTicks();
-		save_name += save_stream.str();
-		save_stream.str(std::string());
-
-		//Append random number to screenshot name
-		srand(SDL_GetTicks());
-		save_stream << rand() % 1024 << rand() % 1024 << rand() % 1024;
-		save_name += save_stream.str() + ".png";
+		//Filename = Date + Ticks
+		while(hex_ticks.length() < 8) { hex_ticks = "0" + hex_ticks; }
+		save_name += (util::get_long_date() + "_" + hex_ticks + ".png");
 
 		QString qt_save_name = QString::fromStdString(save_name);
 
 		//Save OpenGL screen
-		if(config::use_opengl) { hw_screen->grabFrameBuffer().save(qt_save_name, "PNG"); }
+		if(config::use_opengl)
+		{
+			QImage img = hw_screen->grabFrameBuffer();
+			QRect crop(0, 0, img.width(), img.height());
+
+			float original_ratio = float(config::sys_width) / config::sys_height;
+			float current_ratio = float(img.width()) / img.height();
+
+			//Crop image to fit aspect ratio (no black bars)
+			if((config::maintain_aspect_ratio) && (original_ratio != current_ratio))
+			{
+				//Eliminate horizontal bars
+				if(current_ratio > original_ratio)
+				{
+					u32 crop_len = img.height() * original_ratio;
+					u32 crop_offset = (img.width() - crop_len) / 2;
+					crop.setRect(crop_offset, 0, crop_len, img.height());
+				}
+
+				//Eliminate vertical bars
+				else
+				{
+					original_ratio = (1 / original_ratio);
+
+					u32 crop_len = img.width() * original_ratio;
+					u32 crop_offset = (img.height() - crop_len) / 2;
+					crop.setRect(0, crop_offset, img.width(), crop_len);
+				}
+			}
+
+			img.copy(crop).save(qt_save_name, "PNG");
+		}
 
 		//Save software screen
 		else { qt_gui::screen->save(qt_save_name, "PNG"); }

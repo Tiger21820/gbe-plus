@@ -4,7 +4,7 @@ GB Enhanced+ is a DMG/GBC/GBA/Pokemon Mini emulator and experimental NDS emulato
 
 ## License
 GB Enhanced+ as an emulator is Free Open Source Software available under the GPLv2. See license.txt for full details.
-
+f
 Technical documentation and Dan Docs are Public Domain.
 
 ## Overview

@@ -16,10 +16,10 @@
 #include <string>
 #include <fstream>
 
+#include <SDL.h>
 #include <SDL_opengl.h>
 
 #include "common.h"
-
 
 //Matrix class
 class gx_matrix
@@ -49,10 +49,30 @@ class gx_matrix
 
 #ifdef GBE_OGL
 
+//OpenGL data for cores
+//Global data (but namespaced) to counter per-core duplication
+//Also avoids a 1% speed decrease over old method of this being a per-core structure pass to blit_opengl()
+namespace gl_data
+{
+	extern SDL_GLContext gl_context;
+	extern GLuint lcd_texture;
+	extern GLuint program_id;
+	extern GLuint vertex_buffer_object, vertex_array_object, element_buffer_object;
+	extern GLfloat x_scale, y_scale;
+	extern GLfloat ext_data_1, ext_data_2;
+	extern u32 external_data_usage;
+};
+
 //GLSL vertex and fragment shader loader
 GLuint gx_load_shader(std::string vertex_shader_file, std::string fragment_shader_file, u32 &external_data_usage);
 
 #endif
+
+//Initialize OpenGL for cores
+bool gx_init_opengl();
+
+//OpenGL render for cores
+void gx_blit_opengl(SDL_Window *window, SDL_Surface* final_screen);
 
 //2D distance
 float dist(float x1, float y1, float x2, float y2);

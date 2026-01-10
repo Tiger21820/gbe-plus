@@ -287,6 +287,7 @@ namespace config
 	u32 glucoboy_bonus_grps = 0;
 	u32 glucoboy_good_days = 0;
 	u32 glucoboy_days_until_bonus = 0;
+	u32 glucoboy_total = 0;
 
 	u16 campho_ringer_port = 1980;
 	u16 campho_input_port = 1981;
@@ -1262,7 +1263,7 @@ bool parse_ini_file()
 		if(!parse_ini_number(ini_item, "#slot1_device", config::nds_slot1_device, ini_opts, x, 0, 1)) { return false; }
 
 		//Emulated Slot2 device
-		if(!parse_ini_number(ini_item, "#slot2_device", config::nds_slot2_device, ini_opts, x, 0, 9)) { return false; }
+		if(!parse_ini_number(ini_item, "#slot2_device", config::nds_slot2_device, ini_opts, x, 0, 11)) { return false; }
 
 		//Set emulated system type
 		if(!parse_ini_number(ini_item, "#system_type", config::gb_type, ini_opts, x, 0, 7)) { return false; }
@@ -1953,6 +1954,9 @@ bool parse_ini_file()
 		//Glucoboy - Days Until Bonus
 		if(!parse_ini_number(ini_item, "#glucoboy_days_until_bonus", config::glucoboy_days_until_bonus, ini_opts, x, 0, 0x7FFFFFFF)) { return false; }
 
+		//Bayer Digit - Total Points
+		if(!parse_ini_number(ini_item, "#glucoboy_total", config::glucoboy_total, ini_opts, x, 0, 0x7FFFFFFF)) { return false; }
+
 		//Wave Scanner Level
 		if(!parse_ini_number(ini_item, "#wave_scanner_level", config::wave_scanner_level, ini_opts, x, 0, 99)) { return false; }
 
@@ -2094,7 +2098,7 @@ bool save_ini_file()
 		}
 
 		//Emulated microphone device
-		if(ini_item == "#ir_device")
+		if(ini_item == "#mic_device")
 		{
 			line_pos = output_count[x];
 
@@ -2898,6 +2902,14 @@ bool save_ini_file()
 			line_pos = output_count[x];
 
 			output_lines[line_pos] = "[#glucoboy_days_until_bonus:" + util::to_str(config::glucoboy_days_until_bonus) + "]";
+		}
+
+		//Total Points for Glucoboy
+		else if(ini_item == "#glucoboy_total")
+		{
+			line_pos = output_count[x];
+
+			output_lines[line_pos] = "[#glucoboy_total:" + util::to_str(config::glucoboy_total) + "]";
 		}
 
 		//Wave Scanner Level

@@ -125,6 +125,8 @@ enum slot2_device_types
 	NTR_S2_MAGIC_READER = 7,
 	NTR_S2_MEMORY_EXPANSION = 8,
 	NTR_S2_MOTION_PACK = 9,
+	NTR_S2_FACENING_SCAN = 10,
+	NTR_S2_BAYER_DIGIT = 11,
 };
 
 enum microphone_device_types
@@ -338,6 +340,7 @@ namespace config
 	extern u32 glucoboy_bonus_grps;
 	extern u32 glucoboy_good_days;
 	extern u32 glucoboy_days_until_bonus;
+	extern u32 glucoboy_total;
 
 	extern u16 campho_ringer_port;
 	extern u16 campho_input_port;

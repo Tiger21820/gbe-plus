@@ -25,6 +25,11 @@ DMG_LCD::DMG_LCD()
 DMG_LCD::~DMG_LCD()
 {
 	SDL_DestroyWindow(window);
+
+	#ifdef GBE_OGL
+	SDL_GL_DeleteContext(gl_data::gl_context);
+	#endif
+
 	std::cout<<"LCD::Shutdown\n";
 }
 
@@ -434,17 +439,19 @@ void DMG_LCD::render_dmg_scanline()
 	}
 
 	//Push scanline buffer to screen buffer - Normal version
-	else if((config::resize_mode == 0) && (!config::request_resize))
+	else if(config::resize_mode == 0)
 	{
+		u32 offset = (config::sys_width * lcd_stat.current_scanline);
+
 		for(int x = 0; x < 160; x++)
 		{
-			screen_buffer[(config::sys_width * lcd_stat.current_scanline) + x] = scanline_buffer[x];
+			screen_buffer[offset + x] = scanline_buffer[x];
 			scanline_buffer[x] = 0xFFFFFFFF;
 		}
 	}
 
 	//Push scanline buffer to screen buffer - DMG/GBC on GBA stretch
-	else if((config::resize_mode == 1) && (!config::request_resize))
+	else if(config::resize_mode == 1)
 	{
 		u16 offset = 1960 + (lcd_stat.current_scanline * 240);
 
@@ -456,7 +463,7 @@ void DMG_LCD::render_dmg_scanline()
 	}
 
 	//Push scanline buffer to screen buffer - DMG/GBC on GBA stretch
-	else if((config::resize_mode == 2) && (!config::request_resize))
+	else if(config::resize_mode == 2)
 	{
 		u16 offset = 1920 + (lcd_stat.current_scanline * 240);
 		u16 stretched_pos = 0;
@@ -498,17 +505,19 @@ void DMG_LCD::render_gbc_scanline()
 	}
 
 	//Push scanline buffer to screen buffer - Normal version
-	else if((config::resize_mode == 0) && (!config::request_resize))
+	else if(config::resize_mode == 0)
 	{
+		u32 offset = (config::sys_width * lcd_stat.current_scanline);
+
 		for(int x = 0; x < 160; x++)
 		{
-			screen_buffer[(config::sys_width * lcd_stat.current_scanline) + x] = scanline_buffer[x];
+			screen_buffer[offset + x] = scanline_buffer[x];
 			scanline_buffer[x] = 0xFFFFFFFF;
 		}
 	}
 
 	//Push scanline buffer to screen buffer - DMG/GBC on GBA stretch
-	else if((config::resize_mode == 1) && (!config::request_resize))
+	else if(config::resize_mode == 1)
 	{
 		u16 offset = 1960 + (lcd_stat.current_scanline * 240);
 
@@ -520,7 +529,7 @@ void DMG_LCD::render_gbc_scanline()
 	}
 
 	//Push scanline buffer to screen buffer - DMG/GBC on GBA stretch
-	else if((config::resize_mode == 2) && (!config::request_resize))
+	else if(config::resize_mode == 2)
 	{
 		u16 offset = 1920 + (lcd_stat.current_scanline * 240);
 		u16 stretched_pos = 0;
@@ -1219,8 +1228,11 @@ void DMG_LCD::step(int cpu_clock)
 					else { update_obj_render_list(); }
 					
 					//Render scanline when first entering Mode 0
-					if(config::gb_type != SYS_GBC) { render_dmg_scanline(); }
-					else { render_gbc_scanline(); }
+					if(!config::request_resize)
+					{
+						if(config::gb_type != SYS_GBC) { render_dmg_scanline(); }
+						else { render_gbc_scanline(); }
+					}
 
 					//HBlank STAT INT
 					if(mem->memory_map[REG_STAT] & 0x08) { mem->memory_map[IF_FLAG] |= 2; }
@@ -1388,7 +1400,7 @@ void DMG_LCD::step(int cpu_clock)
 							if(SDL_MUSTLOCK(final_screen)){ SDL_UnlockSurface(final_screen); }
 		
 							//Display final screen buffer - OpenGL
-							if(config::use_opengl) { opengl_blit(); }
+							if(config::use_opengl) { gx_blit_opengl(window, final_screen); }
 				
 							//Display final screen buffer - SDL
 							else 

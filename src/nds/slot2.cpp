@@ -123,6 +123,108 @@ u8 NTR_MMU::read_slot2_device(u32 address)
 			}
 
 			break;
+
+		case SLOT2_FACENING_SCAN:
+			//Reading these cart addresses is for detection
+			if(address < 0x8020000)
+			{
+				switch(address)
+				{
+					case 0x80000B5: slot_byte = 0x25; break;
+					case 0x80000BE: slot_byte = 0xFF; break;
+					case 0x80000BF: slot_byte = 0x7F; break;
+					case 0x801FFFE: slot_byte = 0xFF; break;
+					case 0x801FFFF: slot_byte = 0x7F; break;
+					default: slot_byte = 0;
+				}
+			}
+
+			else
+			{
+				switch(address)
+				{
+					//I2C Shift Register - Forced to zero here to indicate end of transfer
+					case NEON_I2C_SR:
+					case NEON_I2C_SR+1:
+						slot_byte = 0;
+						break;
+
+					default:
+						std::cout<<"NTR-014 READ -> 0x" << std::hex << address << "\n";
+						slot_byte = 0;
+				}
+			}
+
+			break;
+
+		case SLOT2_BAYER_DIGIT:
+			//Reading these cart addresses is for detection
+			if(address < 0x8020000)
+			{
+				slot_byte = (address & 0x1) ? 0xF3 : 0x00;
+			}
+
+			else if(address == DIGIT_CNT)
+			{
+				//Inital read-out = 0xBD, 0xDA
+				//Seems to be the default when no index is specified OR after an index has been fully read
+				if(bayer_digit.is_idle)
+				{
+					slot_byte = (bayer_digit.idle_value & 0xFF);
+					bayer_digit.idle_value >>= 8;
+				}
+
+				//Read data normally from indices
+				else
+				{
+					std::cout<<"INDEX -> 0x" << u32(bayer_digit.io_index) << "\n";
+
+					//Read messages data
+					if((bayer_digit.io_index >= 0x10) && (bayer_digit.io_index <= 0x1F))
+					{
+						u8 msg_box = bayer_digit.io_index - 0x10;
+						slot_byte = bayer_digit.messages[msg_box][bayer_digit.msg_index];
+
+						//Signal end of index reading
+						if(bayer_digit.msg_index >= bayer_digit.messages[msg_box].size())
+						{
+							bayer_digit.is_idle = true;
+							bayer_digit.idle_value = 0xDABD;
+						}
+
+						//If additional data needs to be read, trigger another IRQ
+						else
+						{
+							process_bayer_digit_irq();
+							bayer_digit.msg_index++;
+						}
+					}
+
+					//Read regular I/O data
+					else
+					{
+						slot_byte = (bayer_digit.io_regs[bayer_digit.io_index] >> bayer_digit.index_shift);
+
+						//Signal end of index reading
+						if(!bayer_digit.index_shift)
+						{
+							bayer_digit.is_idle = true;
+							bayer_digit.idle_value = 0xDABD;
+						}
+
+						//If additional data needs to be read, trigger another IRQ
+						else
+						{
+							process_bayer_digit_irq();
+							bayer_digit.index_shift -= 8;
+						}
+					}
+				}
+
+				std::cout<<"DIGIT READ -> 0x" << std::hex << address << "\n";
+			}
+
+			break;
 	}
 
 	return slot_byte;
@@ -176,6 +278,155 @@ void NTR_MMU::write_slot2_device(u32 address, u8 value)
 			break;
 
 		case SLOT2_MOTION_PACK:
+			break;
+
+		case SLOT2_FACENING_SCAN:
+			if(address >= 0x8020000)
+			{
+				switch(address)
+				{
+					case NEON_I2C_TX:
+						neon.i2c_data = value;
+						break;
+
+					case NEON_I2C_TX+1:
+						break;
+
+					case NEON_I2C_CNT:
+						neon.i2c_cnt = value;
+
+						//Start Transfer
+						if((neon.i2c_cnt & 0xF0) == 0x90)
+						{
+							neon.i2c_transfer.clear();
+							neon.i2c_transfer.push_back(neon.i2c_data);
+						}
+
+						//Continue Transfer
+						else if((neon.i2c_cnt & 0xF0) == 0x10)
+						{
+							neon.i2c_transfer.push_back(neon.i2c_data);
+						}
+
+						//End Transfer
+						else if((neon.i2c_cnt & 0xF0) == 0x50)
+						{
+							neon.i2c_transfer.push_back(neon.i2c_data);
+
+							//Ensure minimum data for transfer was received (4 Bytes)
+							if((neon.i2c_transfer.size() >= 4) && (neon.mmap.size() >= 0x10000))
+							{
+								neon.index = (neon.i2c_transfer[1] << 8 | neon.i2c_transfer[2]);
+
+								std::cout<<"I2C Transfer Complete\n";
+								std::cout<<"Transfer Size: " << std::dec << (neon.i2c_transfer.size() - 3) << std::hex << "\n";
+								if(neon.i2c_transfer.size() == 4) { std::cout<<"Transfer Data -> 0x" << u32(neon.i2c_transfer[3]) << "\n"; }
+								std::cout<<"Transfer Index: 0x" << neon.index << "\n\n";
+
+								for(u32 x = 3; x < neon.i2c_transfer.size(); x++)
+								{
+									neon_set_stm_register(neon.index, neon.i2c_transfer[x]);
+									neon.index++;
+								}
+							}
+						}
+
+						break;
+
+					case NEON_I2C_CNT+1:
+						break;
+
+					default:
+						std::cout<<"NTR-014 WRITE -> 0x" << std::hex << (u32)address << " :: 0x" << (u32)value << "\n";
+
+				}
+			}
+
+			break;
+
+		case SLOT2_BAYER_DIGIT:
+			if(address == DIGIT_CNT)
+			{
+				bayer_digit.is_idle = false;
+
+				//Grab new parameters
+				if(bayer_digit.parameter_length)
+				{
+					bayer_digit.parameters.push_back(value);
+					bayer_digit.parameter_length--;
+					bayer_digit.request_interrupt = true;
+					bayer_digit.reset_shift = true;
+
+					//Write new data to index if necessary
+					if(!bayer_digit.parameter_length) { process_bayer_digit_index(); }
+				}
+
+				//Validate new index
+				else
+				{
+					//On this read index, update Bayer Digit with system date
+					if(value == 0x20)
+					{
+						time_t system_time = time(0);
+						tm* current_time = localtime(&system_time);
+
+						u8 min = current_time->tm_min;
+						u8 hour = current_time->tm_hour;
+						u8 day = (current_time->tm_mday - 1);
+						u8 month = current_time->tm_mon;
+						u8 year = (current_time->tm_year % 100);
+					
+						if(year == 0) { year = 100; }
+
+						bayer_digit.io_regs[0x20] = min;
+						bayer_digit.io_regs[0x20] |= ((hour & 0x3F) << 6);
+						bayer_digit.io_regs[0x20] |= ((day & 0x1F) << 12);
+						bayer_digit.io_regs[0x20] |= ((month & 0xF) << 20);
+						bayer_digit.io_regs[0x20] |= ((year & 0x7F) << 24);
+					}
+
+
+					//Validate known indices
+					if(((value >= 0x10) && (value <= 0x2D))
+					|| ((value >= 0x31) && (value <= 0x32))
+					|| (value == 0x6C) || (value == 0xE3))
+					{
+						bayer_digit.io_index = value;
+						bayer_digit.request_interrupt = true;
+						bayer_digit.reset_shift = true;
+					}
+
+					//Unknown index - May be valid but needs to be debugged
+					else
+					{
+						bayer_digit.io_index = 0;
+						bayer_digit.request_interrupt = false;
+						bayer_digit.reset_shift = false;
+						std::cout<<"MMU::Unknown Bayer Digit Index: 0x" << (u32)value << "\n";
+					}
+
+					//Set up parameters length when using write indices
+					if(value == 0x6C)
+					{
+						bayer_digit.parameters.clear();
+						bayer_digit.parameter_length = 4;
+					}
+
+					else if(value == 0xE3)
+					{
+						bayer_digit.parameters.clear();
+						bayer_digit.parameter_length = 6;
+					}
+				}
+
+				if(bayer_digit.request_interrupt)
+				{
+					process_bayer_digit_irq();
+				}
+			}
+
+			std::cout<<"DIGIT WRITE -> 0x" << std::hex << (u32)address << " :: 0x" << (u32)value << "\n";
+
 			break;
 	}
 }
@@ -355,4 +606,125 @@ void NTR_MMU::magic_reader_process()
 
 	//Update new SCK in Magic Reader structure
 	magic_reader.sck = new_sck;
+}
+
+/****** Sets the register for STM VL6524 camera ******/
+void NTR_MMU::neon_set_stm_register(u16 index, u8 value)
+{
+	neon.mmap[index] = value;
+
+	switch(index)
+	{
+		case STM_MICRO_ENABLE:
+			if(value == 0x06)
+			{
+				std::cout<<"MMU::STM VL6524 Clocks Enabled\n";
+			}
+
+			break;
+
+		case STM_IO_ENABLE:
+			if(value & 0x01)
+			{
+				std::cout<<"MMU::STM VL6524 IO Enabled\n";
+			}
+
+			break;
+
+		case STM_USER_CMD:
+			std::cout<<"MMU::STM VL6524 Mode - " << u32(value) << "\n";
+			break;
+	}
+}
+
+/****** Resets Bayer Digit data structure ******/
+void NTR_MMU::bayer_digit_reset()
+{
+	bayer_digit.io_index = 0;
+	bayer_digit.io_regs.clear();
+	bayer_digit.io_regs.resize(0x100, 0x00);
+	bayer_digit.index_shift = 0;
+	bayer_digit.request_interrupt = false;
+	bayer_digit.reset_shift = false;
+	bayer_digit.parameter_length = 0;
+
+	bayer_digit.daily_grps = config::glucoboy_daily_grps;
+	bayer_digit.bonus_grps = config::glucoboy_bonus_grps;
+	bayer_digit.good_days = config::glucoboy_good_days;
+	bayer_digit.days_until_bonus = config::glucoboy_days_until_bonus;
+	bayer_digit.total = config::glucoboy_total;
+	bayer_digit.hardware_flags = 0;
+	bayer_digit.ld_threshold = 0;
+	bayer_digit.serial_number = 0;
+
+	//Setup index data
+	bayer_digit.io_regs[0x21] = bayer_digit.daily_grps;
+	bayer_digit.io_regs[0x22] = bayer_digit.bonus_grps;
+	bayer_digit.io_regs[0x23] = bayer_digit.good_days;
+	bayer_digit.io_regs[0x24] = bayer_digit.days_until_bonus;
+	bayer_digit.io_regs[0x25] = bayer_digit.hardware_flags;
+	bayer_digit.io_regs[0x26] = bayer_digit.ld_threshold;
+	bayer_digit.io_regs[0x27] = bayer_digit.serial_number;
+	bayer_digit.io_regs[0x2C] = bayer_digit.total;
+
+	bayer_digit.is_idle = true;
+	bayer_digit.idle_value = 0xDABD;
+
+	bayer_digit.messages.clear();
+	bayer_digit.messages.resize(0x10);
+	for(int x = 0; x < 0x10; x++) { bayer_digit.messages[x].resize(0x40, 0x00); }
+}
+
+/****** Handles Bayer Digit interrupt requests and what data to respond with ******/
+void NTR_MMU::process_bayer_digit_irq()
+{
+	//Trigger Game Pak IRQ
+	nds9_if |= 0x2000;
+	bayer_digit.request_interrupt = false;
+
+	//Set data size of each index (8-bit or 32-bit)
+	if(bayer_digit.reset_shift)
+	{
+		//4-byte read indices
+		if((bayer_digit.io_index >= 0x20) && (bayer_digit.io_index <= 0x2D))
+		{
+			bayer_digit.index_shift = 24;
+		}
+
+		//64-byte page indices
+		else if((bayer_digit.io_index >= 0x10) && (bayer_digit.io_index <= 0x1F))
+		{
+			bayer_digit.msg_index = 0;
+		}
+
+		//Unknown index - Do not process
+		else
+		{
+			bayer_digit.index_shift = 0;
+		}
+
+		bayer_digit.reset_shift = false;
+	}
+}
+
+/****** Handles writing input streams to Bayer Digit indices ******/
+void NTR_MMU::process_bayer_digit_index()
+{
+	u32 input_stream = 0;
+
+	if(!bayer_digit.parameters.empty())
+	{
+		input_stream = (bayer_digit.parameters[0] << 24) | (bayer_digit.parameters[1] << 16) | (bayer_digit.parameters[2] << 8) | (bayer_digit.parameters[3]);
+	}	
+
+	switch(bayer_digit.io_index)
+	{
+		case 0x6C:
+			bayer_digit.io_regs[bayer_digit.io_index - 0x40] = input_stream;
+			config::glucoboy_total = input_stream;
+			break;
+
+		case 0xE3:
+			break;
+	}
 }

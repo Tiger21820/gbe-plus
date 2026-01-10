@@ -69,6 +69,8 @@ class NTR_MMU
 		SLOT2_MAGIC_READER,
 		SLOT2_MEMORY_EXPANSION,
 		SLOT2_MOTION_PACK,
+		SLOT2_FACENING_SCAN,
+		SLOT2_BAYER_DIGIT,
 	};
 
 	backup_types current_save_type;
@@ -247,6 +249,41 @@ class NTR_MMU
 		u32 oid_status;
 		bool oid_reset;
 	} magic_reader;
+
+	//NTR-014 aka "NEON" aka Facening Scan/DS Scanner
+	struct ntr_014
+	{
+		std::vector <u8> mmap;
+		std::vector <u8> i2c_transfer;
+		u16 index;
+		u8 i2c_data;
+		u8 i2c_cnt;
+	} neon;
+
+	//Structure to handle Glucoboy
+	struct gluco
+	{
+		u8 io_index;
+		u8 index_shift;
+		u32 parameter_length;
+		u32 msg_index;
+		std::vector<u32> io_regs;
+		std::vector<u8> parameters;
+		std::vector< std::vector<u8> > messages;
+		bool request_interrupt;
+		bool reset_shift;
+		bool is_idle;
+
+		u32 daily_grps;
+		u32 bonus_grps;
+		u32 good_days;
+		u32 days_until_bonus;
+		u32 hardware_flags;
+		u32 ld_threshold;
+		u32 serial_number;
+		u32 total;
+		u16 idle_value;
+	} bayer_digit;
 
 	//Wantame Card Scanner
 	struct wantame_card_scanner
@@ -503,6 +540,10 @@ class NTR_MMU
 	bool slot2_hcv_load_barcode(std::string filename);
 	void magic_reader_process();
 
+	void bayer_digit_reset();
+	void process_bayer_digit_index();
+	void process_bayer_digit_irq();
+
 	//Microphone device functions
 	void wantame_scanner_process();
 	void wantame_scanner_set_barcode();
@@ -512,6 +553,8 @@ class NTR_MMU
 	void wave_scanner_process();
 	void wave_scanner_set_pulse(u32 hi, u32 lo);
 	void wave_scanner_set_data();
+
+	void neon_set_stm_register(u16 index, u8 value);
 
 	void parse_header();
 

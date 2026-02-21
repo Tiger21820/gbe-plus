@@ -43,6 +43,8 @@ void AGB_MMU::am3_reset()
 
 	am3.firmware_data.clear();
 	am3.card_data.clear();
+	am3.fat_entries.clear();
+	am3.file_data.clear();
 }
 
 /****** Read AM3 firmware file into memory ******/
@@ -57,9 +59,8 @@ bool AGB_MMU::read_am3_firmware(std::string filename)
 	}
 
 	//Get the file size
-	file.seekg(0, file.end);
-	u32 file_size = file.tellg();
-	file.seekg(0, file.beg);
+	u32 file_size = util::get_file_size(filename);
+	if(!file_size) { return util::report_error(filename, util::FILE_SIZE_ZERO); }
 
 	am3.firmware_data.clear();
 	am3.firmware_data.resize(file_size, 0x00);
@@ -95,9 +96,7 @@ bool AGB_MMU::read_smid(std::string filename)
 	}
 
 	//Get the file size
-	file.seekg(0, file.end);
-	u32 file_size = file.tellg();
-	file.seekg(0, file.beg);
+	u32 file_size = util::get_file_size(filename);
 
 	if(file_size != 16)
 	{
@@ -225,12 +224,15 @@ bool AGB_MMU::check_am3_fat()
 	u32 first_fat_addr = vbr + (reserved_sectors * bytes_per_sector);
 
 	std::cout<<"AM3 -> First FAT @ 0x" << first_fat_addr << "\n";
+	
+	if(!parse_am3_fat(first_fat_addr)) { return false; }
 
 	u8 num_of_fats = am3.card_data[vbr + 0x10];
 	u16 sectors_per_fat = ((am3.card_data[vbr + 0x17] << 8) | am3.card_data[vbr + 0x16]);
 	u16 max_root_dirs = ((am3.card_data[vbr + 0x12] << 8) | am3.card_data[vbr + 0x11]);
 	u8 sectors_per_cluster = am3.card_data[vbr + 0x0D];
 
+	u32 cluster_size = (bytes_per_sector * sectors_per_cluster);
 	u32 root_dir_addr = first_fat_addr + ((num_of_fats * sectors_per_fat) * bytes_per_sector);
 	u32 data_region_addr = root_dir_addr + (max_root_dirs * 32);
 
@@ -254,7 +256,7 @@ bool AGB_MMU::check_am3_fat()
 	std::vector<u32> temp_size_list;
 	std::string current_file = "";
 
-	bool is_frag_detected = false;
+	am3.file_data.clear();
 
 	//Grab filenames, size, and location from Root Directory
 	while(t_addr < (data_region_addr + region_limit))
@@ -289,15 +291,8 @@ bool AGB_MMU::check_am3_fat()
 
 				std::cout<<"AM3 File Found @ 0x" << f_pos << " :: Size 0x" << f_size << "\n";
 
-				//Add warning if file appear fragmented
-				if(temp_file_list.size() >= 2)
-				{
-					s32 current_addr = f_pos;
-					s32 last_addr = temp_addr_list[temp_addr_list.size() - 2];
-					s32 last_size = temp_size_list[temp_size_list.size() - 2];
-
-					if((current_addr - last_addr) < last_size) { is_frag_detected = true; }
-				}
+				//Grab file data from FAT
+				grab_am3_file(temp_file_list.back(), f_pos, f_size, data_region_addr, cluster_size, config::dump_am3_files);
 
 				t_addr += 0x20;
 			}
@@ -338,14 +333,11 @@ bool AGB_MMU::check_am3_fat()
 		return false;
 	}
 
-	if(is_frag_detected)
-	{
-		std::cout<<"MMU::Warning - Possible file fragmentation detected in AM3 SmartMedia image\n";
-		std::cout<<"MMU::Warning - Recommended to extract or mount SmartCard image to a folder\n";
-	}
-
 	u32 info_table = t_addr;
 	region_limit = 0x200;
+
+	std::vector<u8> temp_card_data;
+	u32 am3_index = 0;
 
 	//Grab filenames from INFO file. Compare them to the Root Directory. The order they appear in INFO is how the adapter sorts them
 	while(t_addr < (info_table + region_limit))
@@ -367,8 +359,19 @@ bool AGB_MMU::check_am3_fat()
 				if(temp_file_list[x] == current_file)
 				{
 					am3.file_size_list.push_back(temp_size_list[x]);
-					am3.file_addr_list.push_back(temp_addr_list[x]);
+					am3.file_addr_list.push_back(am3_index);
 					am3.file_count++;
+
+					for(u32 y = 0; y < am3.file_data[x].size(); y++)
+					{
+						temp_card_data.push_back(am3.file_data[x][y]);
+					}
+
+					//Pad card data with zeroes to nearest 0x200 block
+					u32 pad_size = (0x200 - (am3.file_data[x].size() % 0x200));
+
+					for(u32 y = 0; y < pad_size; y++) { temp_card_data.push_back(0); }
+					am3_index += (pad_size + am3.file_data[x].size());
 				}
 			}
 
@@ -391,7 +394,119 @@ bool AGB_MMU::check_am3_fat()
 		return false;
 	}
 
+	am3.card_data.clear();
+	am3.file_data.clear();
+
+	for(u32 x = 0; x < temp_card_data.size(); x++)
+	{
+		am3.card_data.push_back(temp_card_data[x]);
+	}
+
 	return true;
+}
+
+/****** Reads and parses FAT-12 File Allocation Table ******/
+bool AGB_MMU::parse_am3_fat(u32 fat_addr)
+{
+	//FAT-12 only has 4096 entries in FAT
+	u32 fat_index = fat_addr;
+	u32 fat_end = (fat_addr + 0x1800);
+
+	if(am3.card_data.size() < fat_end)
+	{
+		std::cout<<"AM3::Error - Invalid File Allocation Table\n";
+		return false;
+	}
+
+	am3.fat_entries.clear();
+
+	while(fat_index < fat_end)
+	{
+		//Read 3 bytes at a time, then divide them into 12-bit halves
+		u16 fat_hi = ((am3.card_data[fat_index + 1] & 0x0F) << 8) | am3.card_data[fat_index];
+		u16 fat_lo = (am3.card_data[fat_index + 2] << 4) | (am3.card_data[fat_index + 1] >> 4);
+
+		am3.fat_entries.push_back(fat_hi);
+		am3.fat_entries.push_back(fat_lo);
+
+		fat_index += 3;
+	}
+
+	return true;
+}
+
+/****** Grabs data for a file from a AM3 SmartMedia image - Optionally dumps file ******/
+void AGB_MMU::grab_am3_file(std::string filename, u32 file_position, u32 file_size, u32 data_region, u32 cluster_size, bool is_dumpable)
+{
+	std::vector<u8> dump_data;
+	bool is_eof = false;
+	u16 fat_index = ((file_position - data_region) / cluster_size) + 2;
+	std::string f_name = "";
+
+	//Clean up filename before saving
+	for(u32 x = 0; x < 0x0B; x++)
+	{
+		u8 f_char = filename[x];
+		if((f_char >= 0x61) && (f_char <= 0x7A)) { f_char -= 0x20; }
+		if(f_char != 0x20) { f_name += f_char; }
+		if(x == 0x07) { f_name += "."; }
+	}	
+
+	while((!is_eof) && (fat_index < 0xFF0))
+	{
+		u16 file_entry = am3.fat_entries[fat_index];
+
+		//Set EOF flag on last cluster
+		if((file_entry >= 0xFF8) && (file_entry <= 0xFFF))
+		{
+			is_eof = true;
+		}
+
+		//Skip bad clusters
+		if(file_entry == 0xFF7)
+		{
+			fat_index++;
+		}
+
+		//Read normal cluster data
+		else
+		{
+			u32 src_addr = data_region + ((fat_index - 2) * cluster_size);
+							
+			for(u32 x = 0; x < cluster_size; x++)
+			{
+				dump_data.push_back(am3.card_data[src_addr++]);
+
+				//Halt data reads if file size is satisfied
+				//Optionally dump file at this time as well
+				if(dump_data.size() == file_size)
+				{
+					if(is_dumpable)
+					{
+						std::ofstream dump_file(f_name.c_str(), std::ios::binary);
+
+						if(!dump_file.is_open())
+						{
+							std::cout<<"MMU::Warning - Could not dump AM3 file " << f_name << "\n";
+						}
+
+						{
+							std::cout<<"MMU::Dumping AM3 File: " << f_name << "\n";
+							dump_file.write(reinterpret_cast<char*> (&dump_data[0]), file_size);
+							dump_file.close();
+						}
+					}
+
+					am3.file_data.push_back(dump_data);
+
+					is_eof = true;
+					break;
+				}
+			}
+
+			fat_index = file_entry;
+		}
+	}
 }
 
 /****** Loads AM3 files from a folder ******/
@@ -431,7 +546,8 @@ bool AGB_MMU::am3_load_folder(std::string folder)
 		//Grab name and size
 		std::string f_name = fs_files->path().string();
 		std::string s_name = fs_files->path().filename().string();
-		u32 f_size = std::filesystem::file_size(fs_files->path());
+		u32 f_size = util::get_file_size(f_name);
+		if(!f_size) { return util::report_error(f_name, util::FILE_SIZE_ZERO); }
 
 		//Convert name to uppercase for searching
 		for(u32 x = 0; x < s_name.length(); x++)

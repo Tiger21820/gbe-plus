@@ -261,6 +261,9 @@ namespace config
 	//AM3 Folder flag
 	bool use_am3_folder = false;
 
+	//AM3 Dump Files flag
+	bool dump_am3_files = false;
+
 	//Total time (in seconds) for Jukebox recording
 	u32 jukebox_total_time = 0;
 
@@ -1015,6 +1018,9 @@ bool parse_cli_args()
 			//Auto Generate AM3 SmartMedia ID
 			else if(config::cli_args[x] == "--auto-gen-smid") { config::auto_gen_am3_id = true; }
 
+			//Dump AM3 Files from disc image
+			else if(config::cli_args[x] == "--dump-am3-files") { config::dump_am3_files = true; }
+
 			//Use AM3 Folder
 			//Automatically sets cart type to AM3
 			else if(config::cli_args[x] == "--am3-folder")
@@ -1074,7 +1080,7 @@ bool parse_cli_args()
 				std::cout<<"--turbo-file-protect \t\t\t Enable write-proection for Turbo File\n";
 				std::cout<<"--ignore-illegal-opcodes \t\t\t Ignore Illegal CPU instructions when running\n";
 				std::cout<<"--auto-gen-smid \t\t\t\t Automatically generate 16-byte SmartMedia ID for AM3\n";
-				std::cout<<"--use-am3-folder \t\t\t\t Use folder of AM3 files instead of SmartMedia image\n";
+				std::cout<<"--am3-folder \t\t\t\t Use folder of AM3 files instead of SmartMedia image\n";
 				std::cout<<"--save-import \t\t\t\t Import save from specified file\n";
 				std::cout<<"--save-export \t\t\t\t Export save to specified file\n";
 				std::cout<<"-h, --help \t\t\t\t Print these help messages\n";
@@ -1954,7 +1960,7 @@ bool parse_ini_file()
 		//Glucoboy - Days Until Bonus
 		if(!parse_ini_number(ini_item, "#glucoboy_days_until_bonus", config::glucoboy_days_until_bonus, ini_opts, x, 0, 0x7FFFFFFF)) { return false; }
 
-		//Bayer Digit - Total Points
+		//Bayer Didget - Total Points
 		if(!parse_ini_number(ini_item, "#glucoboy_total", config::glucoboy_total, ini_opts, x, 0, 0x7FFFFFFF)) { return false; }
 
 		//Wave Scanner Level

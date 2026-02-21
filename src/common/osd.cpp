@@ -13,6 +13,7 @@
 #include <fstream>
 
 #include "config.h"
+#include "util.h"
 
 /****** Loads a font into a buffer to be drawn by a core for OSD ******/
 bool load_osd_font()
@@ -25,13 +26,12 @@ bool load_osd_font()
 	if(!file.is_open())
 	{
 		std::cout<<"GBE::Could not open font file " << font_file << ". Check file path or permissions. \n";
-		return false; 
+		return false;
 	}
 
 	//Get the file size
-	file.seekg(0, file.end);
-	u32 file_size = file.tellg();
-	file.seekg(0, file.beg);
+	u32 file_size = util::get_file_size(font_file);
+	if(!file_size) { return util::report_error(font_file, util::FILE_SIZE_ZERO); }
 
 	u8 font_byte = 0;
 	u32 font_size = file_size / 64;

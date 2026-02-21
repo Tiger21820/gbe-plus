@@ -118,9 +118,9 @@ void NTR_MMU::reset()
 			neon.i2c_cnt = 0;
 			break;
 
-		case NTR_S2_BAYER_DIGIT:
-			current_slot2_device = SLOT2_BAYER_DIGIT;
-			bayer_digit_reset();
+		case NTR_S2_BAYER_DIDGET:
+			current_slot2_device = SLOT2_BAYER_DIDGET;
+			bayer_didget_reset();
 			break;
 	}
 
@@ -5389,9 +5389,8 @@ bool NTR_MMU::read_file(std::string filename)
 	}
 
 	//Get the file size
-	file.seekg(0, file.end);
-	u32 file_size = file.tellg();
-	file.seekg(0, file.beg);
+	u32 file_size = util::get_file_size(filename);
+	if(!file_size) { return util::report_error(filename, util::FILE_SIZE_ZERO); }
 
 	cart_data.resize(file_size);
 
@@ -5490,9 +5489,8 @@ bool NTR_MMU::read_slot2_file(std::string filename)
 	}
 
 	//Get the file size
-	file.seekg(0, file.end);
-	u32 file_size = file.tellg();
-	file.seekg(0, file.beg);
+	u32 file_size = util::get_file_size(filename);
+	if(!file_size) { return util::report_error(filename, util::FILE_SIZE_ZERO); }
 
 	//Only read 32MB at most
 	if(file_size > 0x2000000) { file_size = 0x2000000; }
@@ -5564,9 +5562,8 @@ bool NTR_MMU::read_slot2_file(std::string filename)
 	}
 
 	//Get the file size
-	file.seekg(0, file.end);
-	file_size = file.tellg();
-	file.seekg(0, file.beg);
+	file_size = util::get_file_size(filename);
+	if(!file_size) { return util::report_error(filename, util::FILE_SIZE_ZERO); }
 
 	//Load SRAM
 	if(gba_save_type == GBA_SRAM)
@@ -5630,9 +5627,7 @@ bool NTR_MMU::read_bios_nds7(std::string filename)
 	}
 
 	//Get the file size
-	file.seekg(0, file.end);
-	u32 file_size = file.tellg();
-	file.seekg(0, file.beg);
+	u32 file_size = util::get_file_size(filename);
 
 	if(file_size > 0x4000) { std::cout<<"MMU::Warning - Irregular NDS7 BIOS size\n"; }
 	
@@ -5677,9 +5672,7 @@ bool NTR_MMU::read_bios_nds9(std::string filename)
 	}
 
 	//Get the file size
-	file.seekg(0, file.end);
-	u32 file_size = file.tellg();
-	file.seekg(0, file.beg);
+	u32 file_size = util::get_file_size(filename);
 
 	if(file_size > 0x1000) { std::cout<<"MMU::Warning - Irregular NDS9 BIOS size\n"; }
 	
@@ -5713,9 +5706,7 @@ bool NTR_MMU::read_firmware(std::string filename)
 	}
 
 	//Get the file size
-	file.seekg(0, file.end);
-	u32 file_size = file.tellg();
-	file.seekg(0, file.beg);
+	u32 file_size = util::get_file_size(filename);
 
 	if(file_size > 0x40000) { std::cout<<"MMU::Warning - Irregular NDS firmware size\n"; }
 
@@ -5777,12 +5768,10 @@ bool NTR_MMU::load_backup(std::string filename)
 	}
 
 	//Get the file size
-	file.seekg(0, file.end);
-	u32 file_size = file.tellg();
-	file.seekg(0, file.beg);
-
+	u32 file_size = util::get_file_size(filename);
+	if(!file_size) { return util::report_error(filename, util::FILE_SIZE_ZERO); }
+	
 	u32 final_file_size = 0x10000;
-
 	if((file_size != 0x200) && (file_size != 0x10000)) { final_file_size = file_size; }
 
 	//Clear save data

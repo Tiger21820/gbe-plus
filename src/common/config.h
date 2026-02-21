@@ -126,7 +126,7 @@ enum slot2_device_types
 	NTR_S2_MEMORY_EXPANSION = 8,
 	NTR_S2_MOTION_PACK = 9,
 	NTR_S2_FACENING_SCAN = 10,
-	NTR_S2_BAYER_DIGIT = 11,
+	NTR_S2_BAYER_DIDGET = 11,
 };
 
 enum microphone_device_types
@@ -327,6 +327,7 @@ namespace config
 
 	extern bool auto_gen_am3_id;
 	extern bool use_am3_folder;
+	extern bool dump_am3_files;
 
 	extern u32 jukebox_total_time;
 	extern std::string temp_media_file;

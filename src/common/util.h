@@ -51,6 +51,11 @@ namespace util
 		u32 color;
 	};
 
+	enum error_types
+	{
+		FILE_SIZE_ZERO,
+	};
+
 	u8 rgb_min(u32 color);
 	u8 rgb_max(u32 color);
 
@@ -96,13 +101,17 @@ namespace util
 
 	std::string make_ascii_printable(std::string input);
 	std::string get_utc_string();
-	std::string get_short_date();
-	std::string get_long_date();
+	std::string get_short_date(bool is_formatted);
+	std::string get_long_date(bool is_formatted);
+	std::string get_printable_date();
 
 	std::string get_filename_from_path(std::string path);
 	std::string get_filename_no_ext(std::string filename);
 	void get_files_in_dir(std::string dir_src, std::string extension, std::vector<std::string>& file_list, bool recursive, bool full_path);
 	void get_folders_in_dir(std::string dir_src, std::vector<std::string>& folder_list);
+	u32 get_file_size(std::string filename);
+
+	bool report_error(std::string info, error_types e);
 
 	u32 get_bcd(u32 input);
 	u32 get_bcd_int(u32 input);

@@ -490,9 +490,8 @@ u32 get_file_crc32(std::string filename)
 	}
 
 	//Get the file size
-	file.seekg(0, file.end);
-	u32 file_size = file.tellg();
-	file.seekg(0, file.beg);
+	u32 file_size = get_file_size(filename);
+	if(!file_size) { return util::report_error(filename, util::FILE_SIZE_ZERO); }
 
 	file_data.resize(file_size);
 	u8* ex_mem = &file_data[0];
@@ -723,13 +722,11 @@ std::string get_utc_string()
 	result = utc_day[current_time->tm_wday] + ", " + utc_num[current_time->tm_mday] + " " + utc_mon[current_time->tm_mon] + " " + to_str(current_time->tm_year + 1900) + " ";
 	result += (utc_num[current_time->tm_hour] + "::" + utc_num[current_time->tm_min] + "::" + utc_num[current_time->tm_sec % 60]);
 
-	std::cout<< result << "\n";
-
 	return result;
 }
 
 /****** Gets short date in form of YYYY_MM_DD ******/
-std::string get_short_date()
+std::string get_short_date(bool is_formatted)
 {
 	std::string result = "";
 
@@ -744,13 +741,21 @@ std::string get_short_date()
 	if(month.length() == 1) { month = "0" + month; }
 	if(day.length() == 1) { day = "0" + day; }
 
-	result = year + "_" + month + "_" + day;
-	
+	if(is_formatted)
+	{
+		result = year + "-" + month + "-" + day;
+	}
+
+	else
+	{
+		result = year + "_" + month + "_" + day;
+	}	
+
 	return result;
 }
 
 /****** Gets long date in form of YYYY_MM_DD_HOUR_MINS_SECS ******/
-std::string get_long_date()
+std::string get_long_date(bool is_formatted)
 {
 	std::string result = "";
 
@@ -772,7 +777,15 @@ std::string get_long_date()
 	if(min.length() == 1) { min = "0" + min; }
 	if(sec.length() == 1) { sec = "0" + sec; }
 
-	result = year + "_" + month + "_" + day + "_" + hour + "_" + min + "_" + sec;
+	if(is_formatted)
+	{
+		result = year + "-" + month + "-" + day + " " + hour + ":" + min + ":" + sec;
+	}
+
+	else
+	{
+		result = year + "_" + month + "_" + day + "_" + hour + "_" + min + "_" + sec;
+	}
 	
 	return result;
 }
@@ -978,6 +991,56 @@ void get_folders_in_dir(std::string dir_src, std::vector<std::string>& folder_li
 	}
 
 	return;
+}
+
+/****** Returns the size of a file in bytes + Performs some error checks ******/
+u32 get_file_size(std::string filename)
+{
+	u32 result = 0;
+
+	//Check to see if file exists
+	std::filesystem::path fs_path { filename };
+
+	if(!std::filesystem::exists(fs_path))
+	{
+		std::cout<<"GBE::Warning - " << filename << " does not exist\n";
+		return 0;
+	}
+
+	else if(std::filesystem::is_directory(fs_path))
+	{
+		std::cout<<"GBE::Warning - " << filename << " is a directory\n";
+		return 0; 
+	}
+
+	try
+	{
+		result = std::filesystem::file_size(filename);
+	}
+
+	catch(std::filesystem::filesystem_error& error)
+	{
+		std::cout<<"GBE::Error - " << error.what() << "\n";
+		result = 0;
+	}
+
+	return result;
+}
+
+/****** Short function to report different errors ******/
+bool report_error(std::string info, error_types e)
+{
+	bool result = false;
+
+	switch(e)
+	{
+		//info = filename or path generating this error
+		case FILE_SIZE_ZERO:
+			std::cout<<"GBE::Error - " << info << " has a file size of zero\n";
+			break;
+	}
+
+	return result;
 }
 
 /****** Removes the file extension, if any ******/
@@ -1201,9 +1264,8 @@ bool patch_ips(std::string filename, std::vector<u8>& mem_map, u32 mem_pos, u32 
 	}
 
 	//Get the file size
-	patch_file.seekg(0, patch_file.end);
-	u32 file_size = patch_file.tellg();
-	patch_file.seekg(0, patch_file.beg);
+	u32 file_size = get_file_size(filename);
+	if(!file_size) { return util::report_error(filename, util::FILE_SIZE_ZERO); }
 
 	std::vector<u8> patch_data;
 	patch_data.resize(file_size, 0);
@@ -1306,7 +1368,6 @@ bool patch_ips(std::string filename, std::vector<u8>& mem_map, u32 mem_pos, u32 
 /****** Applies an UPS patch to a ROM loaded in memory ******/
 bool patch_ups(std::string filename, std::vector<u8>& mem_map, u32 mem_pos, u32 max_size)
 {
-
 	std::ifstream patch_file(filename.c_str(), std::ios::binary);
 
 	if(!patch_file.is_open()) 
@@ -1316,9 +1377,8 @@ bool patch_ups(std::string filename, std::vector<u8>& mem_map, u32 mem_pos, u32 
 	}
 
 	//Get the file size
-	patch_file.seekg(0, patch_file.end);
-	u32 file_size = patch_file.tellg();
-	patch_file.seekg(0, patch_file.beg);
+	u32 file_size = get_file_size(filename);
+	if(!file_size) { return util::report_error(filename, util::FILE_SIZE_ZERO); }
 
 	std::vector<u8> patch_data;
 	patch_data.resize(file_size, 0);
@@ -1437,9 +1497,8 @@ bool patch_bps(std::string filename, std::vector<u8>& mem_map, u32 mem_pos, u32 
 	}
 
 	//Get the file size
-	patch_file.seekg(0, patch_file.end);
-	u32 file_size = patch_file.tellg();
-	patch_file.seekg(0, patch_file.beg);
+	u32 file_size = get_file_size(filename);
+	if(!file_size) { return util::report_error(filename, util::FILE_SIZE_ZERO); }
 
 	std::vector<u8> patch_data;
 	patch_data.resize(file_size, 0);

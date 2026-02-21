@@ -126,9 +126,7 @@ bool NTR_MMU::wantame_scanner_load_barcode(std::string filename)
 	}
 
 	//Get file size
-	barcode.seekg(0, barcode.end);
-	u32 barcode_size = barcode.tellg();
-	barcode.seekg(0, barcode.beg);
+	u32 barcode_size = util::get_file_size(filename);
 
 	if(barcode_size != 12)
 	{

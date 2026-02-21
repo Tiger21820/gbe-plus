@@ -698,8 +698,14 @@ bool MIN_MMU::read_file(std::string filename)
 	}
 
 	//Get the file size
-	file.seekg(0, file.end);
-	u32 file_size = file.tellg();
+	u32 file_size = util::get_file_size(filename);
+
+	if(file_size < 0x2100)
+	{
+		std::cout<<"MMU::Error - " << filename << " is too small. \n";
+		return false;
+	}
+	
 	file_size -= 0x2100;
 	file.seekg(0x2100, file.beg);
 
@@ -791,9 +797,8 @@ bool MIN_MMU::read_bios(std::string filename)
 	}
 
 	//Get the file size
-	file.seekg(0, file.end);
-	u32 file_size = file.tellg();
-	file.seekg(0, file.beg);
+	u32 file_size = util::get_file_size(filename);
+	if(!file_size) { return util::report_error(filename, util::FILE_SIZE_ZERO); }
 
 	if(file_size > 0x1000)
 	{
@@ -805,7 +810,6 @@ bool MIN_MMU::read_bios(std::string filename)
 
 	//Read data from the ROM file
 	file.read((char*)ex_mem, file_size);
-
 	file.close();
 
 	std::cout<<"MMU::BIOS file " << filename << " loaded successfully. \n";
@@ -837,9 +841,8 @@ bool MIN_MMU::load_backup(std::string filename)
 	}
 
 	//Get the file size
-	file.seekg(0, file.end);
-	u32 file_size = file.tellg();
-	file.seekg(0, file.beg);
+	u32 file_size = util::get_file_size(filename);
+	if(!file_size) { return util::report_error(filename, util::FILE_SIZE_ZERO); }
 
 	if(file_size > 0x2000)
 	{

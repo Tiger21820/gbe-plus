@@ -9,6 +9,8 @@
 // Main menu for the main window
 // Has options like File, Emulation, Options, About...
 
+#include <filesystem>
+
 #include "main_menu.h"
 #include "qt_common.h"
 #include "render.h"
@@ -222,18 +224,10 @@ main_menu::main_menu(QWidget *parent) : QWidget(parent)
 	{
 		QAction* temp;
 
-		if(x == 0) 
-		{
-			temp = new QAction(tr("Quick Save"), this);
-			temp->setShortcut(tr("F1"));
-		}
-		
-		else
-		{
-			std::string slot_id = "Slot " + util::to_str(x);
-			QString slot_name = QString::fromStdString(slot_id);
-			temp = new QAction(slot_name, this);
-		}
+		std::string slot_id = "Slot " + util::to_str(x);
+		QString slot_name = QString::fromStdString(slot_id);
+		temp = new QAction(slot_name, this);
+		if(x == 0) { temp->setShortcut(tr("F1")); }
 
 		state_save_list->addAction(temp);
 
@@ -249,19 +243,11 @@ main_menu::main_menu(QWidget *parent) : QWidget(parent)
 	for(int x = 0; x < 10; x++)
 	{
 		QAction* temp;
-
-		if(x == 0)
-		{
-			temp = new QAction(tr("Quick Load"), this);
-			temp->setShortcut(tr("F2"));
-		}
 		
-		else
-		{
-			std::string slot_id = "Slot " + util::to_str(x);
-			QString slot_name = QString::fromStdString(slot_id);
-			temp = new QAction(slot_name, this);
-		}
+		std::string slot_id = "Slot " + util::to_str(x);
+		QString slot_name = QString::fromStdString(slot_id);
+		temp = new QAction(slot_name, this);
+		if(x == 0) { temp->setShortcut(tr("F2")); }
 
 		state_load_list->addAction(temp);
 
@@ -421,6 +407,7 @@ void main_menu::open_file()
 	}
 
 	config::no_cart = false;
+	config::use_am3_folder = false;
 
 	boot_game();
 }
@@ -451,7 +438,6 @@ void main_menu::open_am3_fldr()
 	settings->special_cart->setCurrentIndex(0x0E);
 
 	config::rom_file = folder_name.toStdString();
-
 	config::no_cart = false;
 
 	boot_game();
@@ -561,6 +547,99 @@ bool main_menu::check_firmware_hashes(u8 system_type)
 	}
 
 	return result;
+}
+
+/****** Grabs date from a selected save state file ******/
+std::string main_menu::get_save_state_date(std::string filename)
+{
+	std::string result = "";
+	u8 metadata[37];
+	u8 system_type = 0;
+	u32 state_version = 0;
+
+	//Check if file exists and is not a folder
+	if(!std::filesystem::exists(filename) || std::filesystem::is_directory(filename))
+	{
+		return result;
+	}
+
+	std::ifstream file(filename.c_str(), std::ios::binary);
+
+	if(!file.is_open())
+	{
+		return result;
+	}
+
+	u32 file_size = util::get_file_size(filename);
+
+	//Check if the file size is correct to extract date metadata
+	//4 bytes for save state version, 1 byte system type, 32 bytes date string
+	if(file_size < 37)
+	{
+		return result;
+	}
+
+	file.read((char*)&metadata[0], 37);
+	file.close();
+
+	state_version = (metadata[3] << 24) | (metadata[2] << 16) | (metadata[1] << 8) | metadata[0];
+	system_type = metadata[4]; 
+
+	//Verify minimum save state versions for each
+	switch(system_type)
+	{
+		case SYS_DMG:
+		case SYS_GBC:
+			if(state_version < 0x04) { return result; }
+			break;
+
+		case SYS_GBA:
+			if(state_version < 0x04) { return result; }
+			break;
+
+		case SYS_SGB:
+		case SYS_SGB2:
+			if(state_version < 0x05) { return result; }
+			break;
+
+		case SYS_NDS:
+			if(state_version < 0x0A) { return result; }
+			break;
+
+		case SYS_MIN:
+			if(state_version < 0x03) { return result; }
+			break;
+
+		default:
+			return result;
+	}
+
+	for(u32 x = 0; x < 32; x++)
+	{
+		if(!metadata[x + 5]) { break; }
+		result += metadata[x + 5];
+	}
+
+	return result;
+}
+
+/****** Updates save state list when a game is running ******/
+void main_menu::update_save_state_list(QMenu* ss_menu)
+{
+	if(main_menu::gbe_plus == NULL) { return; }
+
+	QList<QAction*> ss_actions = ss_menu->actions();
+
+	if(ss_actions.isEmpty()) { return; }
+
+	for(u32 x = 0; x < ss_actions.size(); x++)
+	{
+		std::string filename = config::rom_file + ".ss" + ((x) ? util::to_str(x) : "");
+		std::string date = get_save_state_date(filename);
+		std::string final_str = "Slot " + util::to_str(x) + "    " + date;
+
+		ss_actions[x]->setText(QString::fromStdString(final_str));
+	}
 }
 
 /****** Opens card file ******/
@@ -1034,6 +1113,10 @@ void main_menu::boot_game()
 
 	if(main_menu::gbe_plus->db_unit.debug_mode) { SDL_CloseAudio(); }
 
+	//Update save state menus
+	update_save_state_list(state_save_list);
+	update_save_state_list(state_load_list);
+
 	//Actually run the core
 	main_menu::gbe_plus->run_core();
 }
@@ -1326,6 +1409,8 @@ void main_menu::pause_emu()
 {
 	SDL_PauseAudio(1);
 
+	qt_gui::draw_surface->setWindowTitle("GBE+ Paused");
+
 	while(config::pause_emu) 
 	{
 		SDL_Delay(16);
@@ -1400,7 +1485,7 @@ void main_menu::screenshot()
 
 		//Filename = Date + Ticks
 		while(hex_ticks.length() < 8) { hex_ticks = "0" + hex_ticks; }
-		save_name += (util::get_long_date() + "_" + hex_ticks + ".png");
+		save_name += (util::get_long_date(false) + "_" + hex_ticks + ".png");
 
 		QString qt_save_name = QString::fromStdString(save_name);
 
@@ -1588,7 +1673,14 @@ void main_menu::load_recent(int file_id)
 /****** Saves a save state ******/
 void main_menu::save_state(int slot)
 {
-	if(main_menu::gbe_plus != NULL)  { main_menu::gbe_plus->save_state(slot); }
+	if(main_menu::gbe_plus != NULL)
+	{
+		main_menu::gbe_plus->save_state(slot);
+
+		//Update save state menus with latest changes
+		update_save_state_list(state_save_list);
+		update_save_state_list(state_load_list);
+	}
 }
 
 /****** Loads a save state ******/

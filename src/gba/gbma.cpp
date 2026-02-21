@@ -903,15 +903,12 @@ void AGB_SIO::mobile_adapter_process_http()
 					if(file.is_open()) 
 					{
 						//Get file size
-						file.seekg(0, file.end);
-						u32 file_size = file.tellg();
-						file.seekg(0, file.beg);
+						u32 file_size = util::get_file_size(filename);
 
 						mobile_adapter.net_data.resize(file_size, 0x0);
 						u8* ex_mem = &mobile_adapter.net_data[0];
 
 						file.read((char*)ex_mem, file_size);
-						file.seekg(0, file.beg);
 						file.close();
 
 						not_found = false;

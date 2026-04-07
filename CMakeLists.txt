@@ -13,9 +13,9 @@ endif()
 
 find_package(SDL2 REQUIRED)
 
-option(LINK_CABLE "Enable link cable emulation (requires SDL2_net)" ON)
+option(USE_NETPLAY "Enable multiplayer via netplay (requires SDL2_net)" ON)
 
-if (LINK_CABLE)
+if (USE_NETPLAY)
 	find_package(SDL2_net REQUIRED)
 	add_definitions(-DGBE_NETPLAY)
 endif()
@@ -55,10 +55,9 @@ endif()
 option(QT_GUI "Enable the Qt GUI" ON)
 
 if(QT_GUI)
-	find_package(Qt5OpenGL REQUIRED)
 	find_package(Qt5Widgets REQUIRED)
 	find_package(Qt5Gui REQUIRED)
-	set(GBE_QT_LIBS Qt5::Gui Qt5::Widgets Qt5::OpenGL)
+	set(GBE_QT_LIBS Qt5::Gui Qt5::Widgets)
 endif()
 
 add_subdirectory(src)

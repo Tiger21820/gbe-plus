@@ -115,6 +115,7 @@ void MIN_core::reset()
 	core_cpu.controllers.video.reset();
 	core_cpu.controllers.audio.reset();
 	core_mmu.reset();
+	core_mmu.reset_ir();
 
 	//Link CPU and MMU
 	core_cpu.mem = &core_mmu;
@@ -764,8 +765,8 @@ void MIN_core::stop_netplay()
 	//Only attempt to disconnect if connected at all
 	if(core_mmu.ir_stat.connected[core_mmu.ir_stat.network_id])
 	{
-		core_mmu.disconnect_ir();
-		std::cout<<"IR::Netplay connection terminated. Restart to reconnect.\n";
+		std::cout<<"IR::Netplay connection suspended.\n";
+		core_mmu.reset_ir();
 	}
 }
 

@@ -17,7 +17,9 @@
 #endif
 
 #include "mmu.h"
-#include "sio_data.h" 
+#include "sio_data.h"
+
+#include "common/net_util.h"
 
 class AGB_SIO
 {
@@ -36,28 +38,10 @@ class AGB_SIO
 	#ifdef GBE_NETPLAY
 
 	//Receiving server
-	struct tcp_server
-	{
-		TCPsocket host_socket, remote_socket;
-		IPaddress host_ip;
-		bool connected;
-		bool host_init;
-		bool remote_init;
-		u16 port;
-	} server;
+	gbe_net_comm server;
 
 	//Sending client
-	struct tcp_sender
-	{
-		TCPsocket host_socket;
-		IPaddress host_ip;
-		bool connected;
-		bool host_init;
-		u16 port;
-	} sender;
-
-	SDLNet_SocketSet tcp_sockets;
-	SDLNet_SocketSet four_player_tcp_sockets;
+	gbe_net_comm sender;
 
 	#endif
 

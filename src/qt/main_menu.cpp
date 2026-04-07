@@ -273,7 +273,7 @@ main_menu::main_menu(QWidget *parent) : QWidget(parent)
 	QDialogButtonBox* about_button = new QDialogButtonBox(QDialogButtonBox::Close);
 	connect(about_button->button(QDialogButtonBox::Close), SIGNAL(clicked()), about_box, SLOT(close()));
 
-	QLabel* emu_title = new QLabel("GBE+ 1.9");
+	QLabel* emu_title = new QLabel("GBE+ 1.10");
 	QFont font = emu_title->font();
 	font.setPointSize(18);
 	font.setBold(true);
@@ -282,8 +282,8 @@ main_menu::main_menu(QWidget *parent) : QWidget(parent)
 	QImage logo(QString::fromStdString(config::cfg_path + "data/icons/gbe_plus.png"));
 	logo = logo.scaled(128, 128);
 	QLabel* emu_desc = new QLabel("A GB/GBC/GBA/NDS/Pokemon Mini emulator");
-	QLabel* emu_copyright = new QLabel("Copyright D.S. Baxter 2014-2025");
-	QLabel* emu_proj_copyright = new QLabel("Copyright GBE+ Team 2014-2025");
+	QLabel* emu_copyright = new QLabel("Copyright D.S. Baxter 2014-2026");
+	QLabel* emu_proj_copyright = new QLabel("Copyright GBE+ Team 2014-2026");
 	QLabel* emu_license = new QLabel("This program is licensed under the GNU GPLv2");
 	QLabel* emu_site = new QLabel("<a href=\"https://github.com/shonumi/gbe-plus/\">GBE+ on GitHub</a>");
 	emu_site->setOpenExternalLinks(true);
@@ -309,9 +309,6 @@ main_menu::main_menu(QWidget *parent) : QWidget(parent)
 	QPushButton* warning_box_ok = warning_box->addButton("OK", QMessageBox::AcceptRole);
 	warning_box->setIcon(QMessageBox::Warning);
 	warning_box->hide();
-
-	display_width = QApplication::desktop()->screenGeometry().width();
-	display_height = QApplication::desktop()->screenGeometry().height();
 
 	fullscreen_mode = false;
 	is_sgb_core = false;
@@ -943,7 +940,7 @@ void main_menu::boot_game()
 
 	findChild<QAction*>("pause_action")->setChecked(false);
 
-	menu_height = menu_bar->height();
+	int menu_height = menu_bar->height();
 
 	//Determine Gameboy type based on file name
 	//Note, DMG and GBC games are automatically detected in the Gameboy MMU, so only check for GBA and NDS types here
@@ -1126,6 +1123,7 @@ void main_menu::paintEvent(QPaintEvent* event)
 {
 	if(qt_gui::screen != NULL)
 	{
+		int menu_height = menu_bar->height();
 		//Check for resize
 		if(settings->resize_screen)
 		{
@@ -1492,7 +1490,7 @@ void main_menu::screenshot()
 		//Save OpenGL screen
 		if(config::use_opengl)
 		{
-			QImage img = hw_screen->grabFrameBuffer();
+			QImage img = hw_screen->grabFramebuffer();
 			QRect crop(0, 0, img.width(), img.height());
 
 			float original_ratio = float(config::sys_width) / config::sys_height;

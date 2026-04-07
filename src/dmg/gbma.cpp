@@ -11,6 +11,7 @@
 
 #include "sio.h"
 #include "common/util.h"
+#include "common/net_util.h"
 
 /****** Processes data sent to the GB Mobile Adapter ******/
 void DMG_SIO::mobile_adapter_process()
@@ -1044,7 +1045,7 @@ void DMG_SIO::mobile_adapter_process_http()
 					u8 response_data[0x8000];
 					u8 timeout = 10;
 
-					if(SDLNet_TCP_Send(sender.host_socket, req_str.c_str(), msg_size) < msg_size)
+					if(net_util::send_data(sender, (void*)req_str.c_str(), msg_size) < msg_size)
 					{
 						std::cout<<"SIO::Error - Could not transmit to GB Mobile Adapter server\n";
 					}
@@ -1060,9 +1061,9 @@ void DMG_SIO::mobile_adapter_process_http()
 							response_size = -1;
 
 							//Check for socket activity, timeout after 1 second
-							if(SDLNet_CheckSockets(tcp_sockets, 100) != -1)
+							if(SDLNet_CheckSockets(sender.tcp_sockets, 100) != -1)
 							{
-								response_size = SDLNet_TCP_Recv(sender.host_socket, (void*)response_data, 0x8000);
+								response_size = net_util::recv_response(sender, response_data, 0x8000);
 							}
 
 							//If a response was received, store net data
@@ -1488,22 +1489,15 @@ bool DMG_SIO::mobile_adapter_open_tcp(u16 port)
 
 	#ifdef GBE_NETPLAY
 
-	sender.host_socket = NULL;
-	sender.host_init = false;
-	sender.connected = false;
-	sender.port = port;
-
 	//Resolve hostname
-	if(SDLNet_ResolveHost(&sender.host_ip, config::gbma_server.c_str(), sender.port) < 0)
+	if(net_util::resolve_host(sender, config::gbma_server) < 0)
 	{
 		std::cout<<"SIO::Error - Could not resolve address of GB Mobile Adapter server\n";
 		return false;
 	}
 
 	//Open a connection to the server
-	sender.host_socket = SDLNet_TCP_Open(&sender.host_ip);
-
-	if(sender.host_socket == NULL)
+	if(!net_util::accept_server(sender))
 	{
 		std::cout<<"SIO::Error - Could not connect to GB Mobile Adapter server\n";
 		return false;
@@ -1514,7 +1508,7 @@ bool DMG_SIO::mobile_adapter_open_tcp(u16 port)
 
 	#endif
 
-	return result;
+	return result; 
 }
 
 /****** Closes a TCP connection to a Mobile Adapter GB server ******/
@@ -1522,8 +1516,7 @@ void DMG_SIO::mobile_adapter_close_tcp()
 {
 	#ifdef GBE_NETPLAY
 
-	SDLNet_TCP_DelSocket(tcp_sockets, sender.host_socket);
-	SDLNet_TCP_Close(sender.host_socket);
+	net_util::close_comm(sender);
 
 	#endif
 }

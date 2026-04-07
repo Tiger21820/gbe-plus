@@ -11,6 +11,7 @@
 
 #include "sio.h"
 #include "common/util.h"
+#include "common/net_util.h"
 
 /****** Initializes DMG-07 specific stuff ******/
 bool DMG_SIO::four_player_init()
@@ -32,19 +33,15 @@ bool DMG_SIO::four_player_init()
 
 	for(int x = 0; x < 3; x++)
 	{
-		//Server info
-		four_player_server[x].host_socket = NULL;
-		four_player_server[x].remote_socket = NULL;
-		four_player_server[x].connected = false;
-		four_player_server[x].port = config::netplay_server_port + (x * 2);
+		u16 server_port = config::netplay_server_port + (x * 2);
+		u16 sender_port = config::netplay_client_port + (x * 2);
 
-		//Client info
-		four_player_sender[x].host_socket = NULL;
-		four_player_sender[x].connected = false;
-		four_player_sender[x].port = config::netplay_client_port + (x * 2);
+		//Server and Client info
+		net_util::setup_comm(four_player_server[x], server_port, NET_COMM_SERVER);
+		net_util::setup_comm(four_player_sender[x], sender_port, NET_COMM_CLIENT);	
 
 		//Setup server, resolve the server with NULL as the hostname, the server will now listen for connections
-		if(SDLNet_ResolveHost(&four_player_server[x].host_ip, NULL, four_player_server[x].port) < 0)
+		if(net_util::resolve_host(four_player_server[x], "") < 0)
 		{
 			std::cout<<"SIO::Error - Server could not resolve hostname\n";
 			return false;
@@ -53,7 +50,7 @@ bool DMG_SIO::four_player_init()
 		//Open a connection to listen on host's port
 		if((!server_init) || (is_master))
 		{
-			if(!(four_player_server[x].host_socket = SDLNet_TCP_Open(&four_player_server[x].host_ip)))
+			if(!net_util::open_tcp(four_player_server[x]))
 			{
 				if((is_master) || ((x == 2) && (!is_master)))
 				{
@@ -65,18 +62,18 @@ bool DMG_SIO::four_player_init()
 			else { server_init = true; }
 		}
 
+		four_player_server[x].host_init = true;
+
 		//Setup client, listen on another port
-		if(SDLNet_ResolveHost(&four_player_sender[x].host_ip, config::netplay_client_ip.c_str(), four_player_sender[x].port) < 0)
+		if(net_util::resolve_host(four_player_sender[x], config::netplay_client_ip) < 0)
 		{
 			std::cout<<"SIO::Error - Client could not resolve hostname\n";
 			return false;
 		}
 	}
 
-	//Create sockets sets
-	four_player_tcp_sockets = SDLNet_AllocSocketSet(9);
-
 	dmg07_init = true;
+	sio_stat.use_hard_sync = true;
 
 	#endif
 
@@ -97,7 +94,7 @@ void DMG_SIO::four_player_disconnect()
 
 	if((four_player_sender[master_id].host_socket != NULL) && (!is_master))
 	{
-		SDLNet_TCP_Send(four_player_sender[master_id].host_socket, (void*)temp_buffer, 2);
+		net_util::send_data(four_player_sender[master_id], temp_buffer, 2);
 	}
 
 	else if(is_master)
@@ -106,34 +103,16 @@ void DMG_SIO::four_player_disconnect()
 		{
 			if((four_player_server[x].connected) && (four_player_sender[x].connected))
 			{
-				SDLNet_TCP_Send(four_player_sender[x].host_socket, (void*)temp_buffer, 2);
+				net_util::send_data(four_player_sender[x], temp_buffer, 2);
 			}
 		}
 	}
 
+	//Close any current connections
 	for(int x = 0; x < 3; x++)
 	{
-		//Close SDL_net and any current connections
-		if(four_player_server[x].host_socket != NULL)
-		{
-			SDLNet_TCP_DelSocket(four_player_tcp_sockets, four_player_server[x].host_socket);
-			if(four_player_server[x].connected) { SDLNet_TCP_Close(four_player_server[x].host_socket); }
-		}
-
-		if(four_player_server[x].remote_socket != NULL)
-		{
-			SDLNet_TCP_DelSocket(four_player_tcp_sockets, four_player_server[x].remote_socket);
-			if(four_player_server[x].connected) { SDLNet_TCP_Close(four_player_server[x].remote_socket); }
-		}
-
-		if(four_player_sender[x].host_socket != NULL)
-		{
-			SDLNet_TCP_DelSocket(four_player_tcp_sockets, four_player_sender[x].host_socket);
-			if(four_player_sender[x].connected) { SDLNet_TCP_Close(four_player_sender[x].host_socket); }
-		}
-
-		four_player_server[x].connected = false;
-		four_player_sender[x].connected = false;
+		net_util::close_comm(four_player_server[x]);
+		net_util::close_comm(four_player_sender[x]);
 	}
 
 	#endif
@@ -149,15 +128,9 @@ void DMG_SIO::four_player_process_network_communication()
 		//Try to accept incoming connections to the server
 		if(!four_player_server[x].connected)
 		{
-			if(four_player_server[x].host_socket != NULL)
+			if(net_util::accept_client(four_player_server[x]))
 			{
-				if(four_player_server[x].remote_socket = SDLNet_TCP_Accept(four_player_server[x].host_socket))
-				{
-					std::cout<<"SIO::Client #" << (x + 1) << " connected\n";
-					SDLNet_TCP_AddSocket(four_player_tcp_sockets, four_player_server[x].host_socket);
-					SDLNet_TCP_AddSocket(four_player_tcp_sockets, four_player_server[x].remote_socket);
-					four_player_server[x].connected = true;
-				}
+				std::cout<<"SIO::Client #" << (x + 1) << " connected\n";
 			}
 		}
 
@@ -165,11 +138,9 @@ void DMG_SIO::four_player_process_network_communication()
 		if(!four_player_sender[x].connected)
 		{
 			//Open a connection to listen on host's port
-			if(four_player_sender[x].host_socket = SDLNet_TCP_Open(&four_player_sender[x].host_ip))
+			if(net_util::accept_server(four_player_sender[x]))
 			{
 				std::cout<<"SIO::Connected to server\n";
-				SDLNet_TCP_AddSocket(four_player_tcp_sockets, four_player_sender[x].host_socket);
-				four_player_sender[x].connected = true;
 			}
 		}
 
@@ -281,15 +252,16 @@ bool DMG_SIO::four_player_receive_byte()
 	u8 temp_buffer[2];
 	temp_buffer[0] = temp_buffer[1] = 0;
 
-	//Check the status of connection
-	SDLNet_CheckSockets(four_player_tcp_sockets, 0);
-
 	//If this socket is active, receive the transfer
 	for(int x = 0; x < 3; x++)
 	{
-		if((four_player_server[x].remote_socket != NULL) && (SDLNet_SocketReady(four_player_server[x].remote_socket)))
+		if((four_player_server[x].tcp_sockets != NULL) && (four_player_server[x].remote_socket != NULL))
 		{
-			if(SDLNet_TCP_Recv(four_player_server[x].remote_socket, temp_buffer, 2) > 0)
+			//Check the status of connection
+			//This is non-blocking
+			SDLNet_CheckSockets(four_player_server[x].tcp_sockets, 0);
+
+			if((SDLNet_SocketReady(four_player_server[x].remote_socket)) && (net_util::recv_data(four_player_server[x], temp_buffer, 2) > 0))
 			{
 				//4-Player - Confirm SB write for Players 2, 3, and 4
 				if(temp_buffer[1] == 0xFE)
@@ -298,7 +270,7 @@ bool DMG_SIO::four_player_receive_byte()
 					temp_buffer[1] = 0x1;
 
 					//Send acknowlegdement
-					SDLNet_TCP_Send(four_player_sender[x].host_socket, (void*)temp_buffer, 2);
+					net_util::send_data(four_player_sender[x], temp_buffer, 2);
 
 					return true;
 				}
@@ -312,7 +284,7 @@ bool DMG_SIO::four_player_receive_byte()
 					temp_buffer[1] = 0x1;
 
 					//Send acknowlegdement
-					SDLNet_TCP_Send(four_player_sender[x].host_socket, (void*)temp_buffer, 2);
+					net_util::send_data(four_player_sender[x], temp_buffer, 2);
 
 					return true;
 				}
@@ -362,7 +334,7 @@ bool DMG_SIO::four_player_receive_byte()
 					}
 
 					//Send acknowlegdement
-					SDLNet_TCP_Send(four_player_sender[x].host_socket, (void*)temp_buffer, 2);
+					net_util::send_data(four_player_sender[x], temp_buffer, 2);
 
 					return true;
 				}
@@ -374,7 +346,7 @@ bool DMG_SIO::four_player_receive_byte()
 					temp_buffer[1] = 0x1;
 
 					//Send acknowlegdement
-					SDLNet_TCP_Send(four_player_sender[x].host_socket, (void*)temp_buffer, 2);
+					net_util::send_data(four_player_sender[x], temp_buffer, 2);
 
 					return true;
 				}
@@ -389,7 +361,7 @@ bool DMG_SIO::four_player_receive_byte()
 					sio_stat.ping_count = 0;
 
 					//Send acknowlegdement
-					SDLNet_TCP_Send(four_player_sender[x].host_socket, (void*)temp_buffer, 2);
+					net_util::send_data(four_player_sender[x], temp_buffer, 2);
 
 					return true;
 				}
@@ -401,7 +373,7 @@ bool DMG_SIO::four_player_receive_byte()
 					temp_buffer[1] = 0x1;
 
 					//Send acknowlegdement
-					SDLNet_TCP_Send(four_player_sender[x].host_socket, (void*)temp_buffer, 2);
+					net_util::send_data(four_player_sender[x], temp_buffer, 2);
 
 					return true;
 				}
@@ -413,7 +385,7 @@ bool DMG_SIO::four_player_receive_byte()
 					temp_buffer[1] = 0x1;
 
 					//Send acknowlegdement
-					SDLNet_TCP_Send(four_player_sender[x].host_socket, (void*)temp_buffer, 2);
+					net_util::send_data(four_player_sender[x], temp_buffer, 2);
 
 					return true;
 				}
@@ -427,7 +399,7 @@ bool DMG_SIO::four_player_receive_byte()
 					temp_buffer[1] = 0x1;
 
 					//Send acknowlegdement
-					SDLNet_TCP_Send(four_player_sender[x].host_socket, (void*)temp_buffer, 2);
+					net_util::send_data(four_player_sender[x], temp_buffer, 2);
 
 					return true;
 				}
@@ -435,9 +407,9 @@ bool DMG_SIO::four_player_receive_byte()
 				//Disconnect netplay
 				else if(temp_buffer[1] == 0x80)
 				{
-					std::cout<<"SIO::Netplay connection terminated. Restart to reconnect.\n";
-					sio_stat.connected = false;
-					sio_stat.sync = false;
+					std::cout<<"SIO::Netplay connection suspended.\n";
+					reset();
+					init();
 					return true;
 
 					if(sio_stat.sio_type == GB_FOUR_PLAYER_ADAPTER)
@@ -476,7 +448,7 @@ bool DMG_SIO::four_player_receive_byte()
 				temp_buffer[0] = sio_stat.transfer_byte;
 				sio_stat.transfer_byte = mem->memory_map[REG_SB];
 
-				if(SDLNet_TCP_Send(four_player_sender[x].host_socket, (void*)temp_buffer, 2) < 2)
+				if(net_util::send_data(four_player_sender[x], temp_buffer, 2) < 2)
 				{
 					std::cout<<"SIO::Error - Host failed to send data to client\n";
 					sio_stat.connected = false;
@@ -513,7 +485,7 @@ void DMG_SIO::four_player_broadcast(u8 data_one, u8 data_two)
 			temp_buffer[0] = data_one;
 			temp_buffer[1] = data_two;
 
-			if(SDLNet_TCP_Send(four_player_sender[x].host_socket, (void*)temp_buffer, 2) < 2)
+			if(net_util::send_data(four_player_sender[x], temp_buffer, 2) < 2)
 			{
 				std::cout<<"SIO::Error - Host failed to send data to client\n";
 				sio_stat.connected = false;
@@ -524,12 +496,13 @@ void DMG_SIO::four_player_broadcast(u8 data_one, u8 data_two)
 
 			//Wait for other instance of GBE+ to send an acknowledgement
 			//This is blocking, will effectively pause GBE+ until it gets something
-			SDLNet_TCP_Recv(four_player_server[x].remote_socket, temp_buffer, 2);
+			net_util::recv_data(four_player_server[x], temp_buffer, 2, true);
 
 			if(temp_buffer[1] == 0x80)
 			{
-				std::cout<<"SIO::Netplay connection terminated. Restart to reconnect.\n";
+				std::cout<<"SIO::Netplay connection suspended.\n";
 				reset();
+				init();
 				return;
 			}
 		}
@@ -556,7 +529,7 @@ u8 DMG_SIO::four_player_request(u8 data_one, u8 data_two, u8 id)
 
 	if(!four_player_server[id].connected || !four_player_sender[id].connected) { return 0; }
 
-	if(SDLNet_TCP_Send(four_player_sender[id].host_socket, (void*)temp_buffer, 2) < 2)
+	if(net_util::send_data(four_player_sender[id], temp_buffer, 2) < 2)
 	{
 		std::cout<<"SIO::Error - Host failed to send data to client\n";
 		sio_stat.connected = false;
@@ -567,12 +540,13 @@ u8 DMG_SIO::four_player_request(u8 data_one, u8 data_two, u8 id)
 
 	//Wait for other instance of GBE+ to send an acknowledgement
 	//This is blocking, will effectively pause GBE+ until it gets something
-	SDLNet_TCP_Recv(four_player_server[id].remote_socket, temp_buffer, 2);
+	net_util::recv_data(four_player_server[id], temp_buffer, 2, true);
 
 	if(temp_buffer[1] == 0x80)
 	{
-		std::cout<<"SIO::Netplay connection terminated. Restart to reconnect.\n";
+		std::cout<<"SIO::Netplay connection suspended.\n";
 		reset();
+		init();
 		return 0;
 	}
 

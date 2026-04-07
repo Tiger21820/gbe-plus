@@ -34,22 +34,13 @@ DMG_SIO::~DMG_SIO()
 	#ifdef GBE_NETPLAY
 
 	//Close any current connections - Four Player
-	four_player_disconnect();
-		
-	//Close SDL_net and any current connections
-	if(server.host_socket != NULL)
+	if(sio_stat.sio_type == GB_FOUR_PLAYER_ADAPTER)
 	{
-		SDLNet_TCP_DelSocket(tcp_sockets, server.host_socket);
-		if(server.host_init) { SDLNet_TCP_Close(server.host_socket); }
+		four_player_disconnect();
 	}
 
-	if(server.remote_socket != NULL)
-	{
-		SDLNet_TCP_DelSocket(tcp_sockets, server.remote_socket);
-		if(server.remote_init) { SDLNet_TCP_Close(server.remote_socket); }
-	}
-
-	if(sender.host_socket != NULL)
+	//Regular disconnect signal
+	else
 	{
 		//Close connection with real Mobile Adapter GB server
 		if((sio_stat.sio_type != GB_MOBILE_ADAPTER) && (!config::use_real_gbma_server))
@@ -59,19 +50,12 @@ DMG_SIO::~DMG_SIO()
 			temp_buffer[0] = 0;
 			temp_buffer[1] = 0x80;
 		
-			SDLNet_TCP_Send(sender.host_socket, (void*)temp_buffer, 2);
-
-			SDLNet_TCP_DelSocket(tcp_sockets, sender.host_socket);
-			if(sender.host_init) { SDLNet_TCP_Close(sender.host_socket); }
+			net_util::send_data(sender, temp_buffer, 2);
 		}
+
+		net_util::close_comm(server);
+		net_util::close_comm(sender);
 	}
-
-	server.connected = false;
-	sender.connected = false;
-
-	server.host_init = false;
-	server.remote_init = false;
-	sender.host_init = false;
 
 	SDLNet_Quit();
 
@@ -144,8 +128,8 @@ bool DMG_SIO::init()
 	//Initialize Mobile Adapter GB with real access to a server
 	else if((sio_stat.sio_type == GB_MOBILE_ADAPTER) && (config::use_real_gbma_server))
 	{
-		//Create sockets sets
-		tcp_sockets = SDLNet_AllocSocketSet(1);
+		//Client info
+		net_util::setup_comm(sender, config::gbma_server_http_port, NET_COMM_CLIENT);
 
 		//Test connection
 		if(!mobile_adapter_open_tcp(config::gbma_server_http_port)) { return false; }
@@ -161,19 +145,9 @@ bool DMG_SIO::init()
 
 	//Initialize other Link Cable communications normally
 
-	//Server info
-	server.host_socket = NULL;
-	server.host_init = false;
-	server.remote_socket = NULL;
-	server.remote_init = false;
-	server.connected = false;
-	server.port = config::netplay_server_port;
-
-	//Client info
-	sender.host_socket = NULL;
-	sender.host_init = false;
-	sender.connected = false;
-	sender.port = config::netplay_client_port;
+	//Server and Client info
+	net_util::setup_comm(server, config::netplay_server_port, NET_COMM_SERVER);
+	net_util::setup_comm(sender, config::netplay_client_port, NET_COMM_CLIENT);
 
 	//Use special port configuration for HuC-1/HuC-3 IR communications
 	//Network connections are set up by set_huc_ir_connection()
@@ -197,14 +171,14 @@ bool DMG_SIO::init()
 		}
 
 		//Setup server, resolve the server with NULL as the hostname, the server will now listen for connections
-		if(SDLNet_ResolveHost(&server.host_ip, NULL, server.port) < 0)
+		if(net_util::resolve_host(server, "") < 0)
 		{
 			std::cout<<"SIO::Error - Server could not resolve hostname\n";
 			return false;
 		}
 
 		//Open a connection to listen on host's port
-		if(!(server.host_socket = SDLNet_TCP_Open(&server.host_ip)))
+		if(!net_util::open_tcp(server))
 		{
 			std::cout<<"SIO::Error - Server could not open a connection on Port " << server.port << "\n";
 			return false;
@@ -213,15 +187,12 @@ bool DMG_SIO::init()
 		server.host_init = true;
 
 		//Setup client, listen on another port
-		if(SDLNet_ResolveHost(&sender.host_ip, config::netplay_client_ip.c_str(), sender.port) < 0)
+		if(net_util::resolve_host(sender, config::netplay_client_ip) < 0)
 		{
 			std::cout<<"SIO::Error - Client could not resolve hostname\n";
 			return false;
 		}
 	}
-
-	//Create sockets sets
-	tcp_sockets = SDLNet_AllocSocketSet(3);
 
 	//Initialize hard syncing
 	if(config::netplay_hard_sync)
@@ -230,33 +201,15 @@ bool DMG_SIO::init()
 		sio_stat.sync_counter = (config::netplay_server_port > config::netplay_client_port) ? 64 : 0;
 	}
 
-	//Default Four Player settings 
-	for(u32 x = 0; x < 3; x++)
-	{
-		four_player_server[x].host_socket = NULL;
-		four_player_server[x].remote_socket = NULL;
-		four_player_server[x].connected = false;
-		four_player_server[x].port = 0;
-
-		//Client info
-		four_player_sender[x].host_socket = NULL;
-		four_player_sender[x].connected = false;
-		four_player_sender[x].port = 0;
-	}
-
-	//When using HuC-1/HuC-3 IR, wait until transfers start before using hard sync
+	//When using infrared communications, wait until transfers start before using hard sync
 	//When using the Link Cable, also wait until transfers start before using hard sync
 	//Hard sync is *always* on for the 4-Player Adapter (this probably won't change)
 	if(config::netplay_hard_sync)
 	{
-		if(config::cart_type == DMG_HUC_IR)
+		if((config::cart_type == DMG_HUC_IR) || (config::sio_device == SIO_DMG_LINK_CABLE)
+		|| (config::ir_device == IR_GBC))
 		{
 			sio_stat.use_hard_sync = false;
-		}
-
-		else if(config::sio_device == SIO_4_PLAYER_ADAPTER)
-		{
-			sio_stat.use_hard_sync = true;
 		}
 	}
 
@@ -569,73 +522,71 @@ void DMG_SIO::reset()
 	//Close any current connections
 	if(network_init)
 	{
-		for(int x = 0; x < 3; x++)
+		//Reset all connections for DMG-07
+		if(sio_stat.sio_type == GB_FOUR_PLAYER_ADAPTER)
 		{
-			//Send disconnect byte to other systems
-			if((four_player_server[x].connected) && (four_player_sender[x].connected))
+			for(int x = 0; x < 3; x++)
 			{
-				u8 temp_buffer[2];
-				temp_buffer[0] = 0;
-				temp_buffer[1] = 0x80;
+				//Send disconnect byte to other systems
+				if((four_player_server[x].connected) && (four_player_sender[x].connected))
+				{
+					u8 temp_buffer[2];
+					temp_buffer[0] = 0;
+					temp_buffer[1] = 0x80;
 
-				SDLNet_TCP_Send(four_player_sender[x].host_socket, (void*)temp_buffer, 2);
+					net_util::send_data(four_player_sender[x], temp_buffer, 2);
+				}
+
+				net_util::close_comm(four_player_server[x]);
+				net_util::close_comm(four_player_sender[x]);
 			}
-
-			if((four_player_server[x].host_socket != NULL) && (four_player_server[x].connected))
-			{
-				SDLNet_TCP_Close(four_player_server[x].host_socket);
-			}
-
-			if((four_player_server[x].remote_socket != NULL) && (four_player_server[x].connected))
-			{
-				SDLNet_TCP_Close(four_player_server[x].remote_socket);
-			}
-
-			if((four_player_sender[x].host_socket != NULL) && (four_player_sender[x].connected))
-			{
-				SDLNet_TCP_Close(four_player_sender[x].host_socket);
-			}
-
-			four_player_server[x].connected = false;
-			four_player_sender[x].connected = false;
 		}
 		
-		if((server.host_socket != NULL) && (server.host_init))
+		//Reset all connections for live connection to emulated Mobile Adapter GB servers
+		else if((sio_stat.sio_type == GB_MOBILE_ADAPTER) && (config::use_real_gbma_server))
 		{
-			SDLNet_TCP_Close(server.host_socket);
+			net_util::close_comm(sender);		
+			net_util::setup_comm(sender, config::gbma_server_http_port, NET_COMM_CLIENT);
+
+			if(!mobile_adapter_open_tcp(config::gbma_server_http_port)) { return; }
+
+			mobile_adapter_close_tcp();
 		}
 
-		if((server.remote_socket != NULL) && (server.remote_init))
-		{
-			SDLNet_TCP_Close(server.remote_socket);
-		}
-
-		if(sender.host_socket != NULL)
+		//Reset all other connections (DMG-GBC Link Cable, GBC IR, HuC-IR)
+		else
 		{
 			//Send disconnect byte to another system
 			u8 temp_buffer[2];
 			temp_buffer[0] = 0;
 			temp_buffer[1] = 0x80;
 		
-			SDLNet_TCP_Send(sender.host_socket, (void*)temp_buffer, 2);
+			net_util::send_data(sender, temp_buffer, 2);
 
-			if(sender.host_init) { SDLNet_TCP_Close(sender.host_socket); }
+			net_util::close_comm(server);
+			net_util::close_comm(sender);
+		}
+
+		//Reset hard sync settings appropiately (see init() above for more details)
+		if(config::netplay_hard_sync)
+		{
+			if((config::cart_type == DMG_HUC_IR) || (config::sio_device == SIO_DMG_LINK_CABLE)
+			|| (config::ir_device == IR_GBC))
+			{
+				sio_stat.use_hard_sync = false;
+			}
+		}
+
+		else if(config::sio_device == SIO_4_PLAYER_ADAPTER)
+		{
+			sio_stat.use_hard_sync = true;
+		}
+
+		else
+		{
+			sio_stat.use_hard_sync = false;
 		}
 	}
-
-	//Server info
-	server.host_socket = NULL;
-	server.host_init = false;
-	server.remote_socket = NULL;
-	server.remote_init = false;
-	server.connected = false;
-	server.port = config::netplay_server_port;
-
-	//Client info
-	sender.host_socket = NULL;
-	sender.host_init = false;
-	sender.connected = false;
-	sender.port = config::netplay_client_port;
 
 	#endif
 
@@ -664,18 +615,17 @@ bool DMG_SIO::send_byte()
 		temp_buffer[0] = sio_stat.transfer_byte;
 		temp_buffer[1] = 0;
 
-		if(SDLNet_TCP_Send(sender.host_socket, (void*)temp_buffer, 2) < 2)
+		if(net_util::send_data(sender, temp_buffer, 2) < 2)
 		{
 			std::cout<<"SIO::Error - Host failed to send data to client\n";
-			sio_stat.connected = false;
-			server.connected = false;
-			sender.connected = false;
+			reset();
+			init();
 			return false;
 		}
 
 		//Wait for other Game Boy to send this one its SB
 		//This is blocking, will effectively pause GBE+ until it gets something
-		if(SDLNet_TCP_Recv(server.remote_socket, temp_buffer, 2) > 0)
+		if(net_util::recv_data(server, temp_buffer, 2, true) > 0)
 		{
 			mem->memory_map[REG_SB] = sio_stat.transfer_byte = temp_buffer[0];
 		}
@@ -701,7 +651,7 @@ bool DMG_SIO::send_byte()
 /****** Transfers one bit to another system's IR port ******/
 bool DMG_SIO::send_ir_signal()
 {
-	if(sio_stat.ir_type == NO_GB_IR) { return true; }
+	if((sio_stat.ir_type != GBC_IR_PORT) && (config::cart_type != DMG_HUC_IR)) { return false; }
 
 	#ifdef GBE_NETPLAY
 
@@ -712,18 +662,17 @@ bool DMG_SIO::send_ir_signal()
 	temp_buffer[0] = mem->ir_stat.signal;
 	temp_buffer[1] = 0x40;
 
-	if(SDLNet_TCP_Send(sender.host_socket, (void*)temp_buffer, 2) < 2)
+	if(net_util::send_data(sender, temp_buffer, 2) < 2)
 	{
 		std::cout<<"SIO::Error - Host failed to send data to client\n";
-		sio_stat.connected = false;
-		server.connected = false;
-		sender.connected = false;
+		reset();
+		init();
 		return false;
 	}
 
 	//Wait for other instance of GBE+ to send an acknowledgement
 	//This is blocking, will effectively pause GBE+ until it gets something
-	if(SDLNet_TCP_Recv(server.remote_socket, temp_buffer, 2) > 0)
+	if(net_util::recv_data(server, temp_buffer, 2, true) > 0)
 	{
 		mem->ir_stat.send = false;
 	}
@@ -745,157 +694,155 @@ bool DMG_SIO::receive_byte()
 	#ifdef GBE_NETPLAY
 
 	if(sio_stat.sio_type == GB_FOUR_PLAYER_ADAPTER) { return four_player_receive_byte(); }
+	if((!sio_stat.connected) || (server.tcp_sockets == NULL)) { return false; }
 
 	u8 temp_buffer[2];
 	temp_buffer[0] = temp_buffer[1] = 0;
 
 	//Check the status of connection
-	SDLNet_CheckSockets(tcp_sockets, 0);
+	SDLNet_CheckSockets(server.tcp_sockets, 0);
 
 	//If this socket is active, receive the transfer
-	if(SDLNet_SocketReady(server.remote_socket))
+	//This is non-blocking
+	if(net_util::recv_data(server, temp_buffer, 2) > 0)
 	{
-		if(SDLNet_TCP_Recv(server.remote_socket, temp_buffer, 2) > 0)
+		//Stop sync
+		if(temp_buffer[1] == 0xFF)
 		{
-			//Stop sync
-			if(temp_buffer[1] == 0xFF)
+			sio_stat.sync = false;
+			sio_stat.sync_counter = 0;
+			sio_stat.sync_clock = config::netplay_sync_threshold + temp_buffer[0];
+			return true;
+		}
+
+		//Stop hard sync for Link Cable bytes and IR signals
+		else if(temp_buffer[1] == 0xF1)
+		{
+			sio_stat.sync = false;
+			sio_stat.use_hard_sync = false;
+			sio_stat.sync_counter = 0;
+			return true;
+		}
+
+		//Stop sync with acknowledgement
+		else if(temp_buffer[1] == 0xF0)
+		{
+			sio_stat.sync = false;
+			sio_stat.sync_counter = 0;
+
+			temp_buffer[1] = 0x1;
+
+			//Send acknowlegdement
+			net_util::send_data(sender, temp_buffer, 2);
+
+			return true;
+		}
+
+		//Suspend netplay
+		else if(temp_buffer[1] == 0x80)
+		{
+			std::cout<<"SIO::Netplay connection suspended.\n";
+			sio_stat.connected = false;
+			sio_stat.sync = false;
+			sio_stat.sync_counter = 0;
+
+			//Reset network connections
+			reset();
+			init();
+
+			return true;
+		}
+
+		//Receive IR signal
+		else if(temp_buffer[1] == 0x40)
+		{
+			temp_buffer[1] = 0x41;
+
+			//Handle GBC IR signals
+			if(config::cart_type != DMG_HUC_IR)
 			{
-				sio_stat.sync = false;
-				sio_stat.sync_counter = 0;
-				sio_stat.sync_clock = config::netplay_sync_threshold + temp_buffer[0];
-				return true;
-			}
-
-			//Stop hard sync for Link Cable bytes and IR signals
-			else if(temp_buffer[1] == 0xF1)
-			{
-				sio_stat.sync = false;
-				sio_stat.use_hard_sync = false;
-				sio_stat.sync_counter = 0;
-				return true;
-			}
-
-			//Stop sync with acknowledgement
-			else if(temp_buffer[1] == 0xF0)
-			{
-				sio_stat.sync = false;
-				sio_stat.sync_counter = 0;
-
-				temp_buffer[1] = 0x1;
-
-				//Send acknowlegdement
-				SDLNet_TCP_Send(sender.host_socket, (void*)temp_buffer, 2);
-
-				return true;
-			}
-
-			//Suspend netplay
-			else if(temp_buffer[1] == 0x80)
-			{
-				std::cout<<"SIO::Netplay connection suspended.\n";
-				sio_stat.connected = false;
-				sio_stat.sync = false;
-				sio_stat.sync_counter = 0;
-
-				if(config::cart_type == DMG_HUC_IR) { set_huc_ir_connection(); }
-
-				return true;
-			}
-
-			//Receive IR signal
-			else if(temp_buffer[1] == 0x40)
-			{
-				temp_buffer[1] = 0x41;
-
-				//Handle GBC IR signals
-				if(config::cart_type != DMG_HUC_IR)
+				if(sio_stat.ir_type != NO_GB_IR)
 				{
-					if(sio_stat.ir_type != NO_GB_IR)
+					//Clear out Bit 1 of RP if receiving signal
+					if(temp_buffer[0] == 1)
 					{
-						//Clear out Bit 1 of RP if receiving signal
-						if(temp_buffer[0] == 1)
-						{
-							mem->memory_map[REG_RP] &= ~0x2;
-							mem->ir_stat.fade_counter = 12672;
-						}
+						mem->memory_map[REG_RP] &= ~0x2;
+						mem->ir_stat.fade_counter = 12672;
+					}
 
-						//Set Bit 1 of RP if IR signal is normal
-						else
-						{
-							mem->memory_map[REG_RP] |= 0x2;
-							mem->ir_stat.fade_counter = 0;
-						}
+					//Set Bit 1 of RP if IR signal is normal
+					else
+					{
+						mem->memory_map[REG_RP] |= 0x2;
+						mem->ir_stat.fade_counter = 0;
 					}
 				}
-
-				//Handle IR signals for HuC-1 or HuC-3
-				else
-				{
-					//Set to IR cart register to 0xC1 if receiving signal
-					if(temp_buffer[0] == 1) { mem->cart.huc_ir_input = 0x01; }
-
-					//Set to IR cart register to 0xC0 if receiving no signal
-					else { mem->cart.huc_ir_input = 0x00; }
-				}
-
-				//Start hard sync timeout countdown
-				sio_stat.halt_counter = 0x400000;
-
-				//Reset hard sync if new IR signal received
-				if((config::netplay_hard_sync) && (!sio_stat.use_hard_sync))
-				{
-					sio_stat.use_hard_sync = true;
-					
-				} 
-
-				//Send acknowlegdement
-				SDLNet_TCP_Send(sender.host_socket, (void*)temp_buffer, 2);
-
-				return true;
 			}
 
-			else if(temp_buffer[1] != 0) { return true; }
-
-			//Send transfer byte back to other Game Boy only if emulating the Link Cable
-			if(sio_stat.sio_type == GB_LINK)
+			//Handle IR signals for HuC-1 or HuC-3
+			else
 			{
-				//Raise SIO IRQ after sending byte
-				mem->memory_map[IF_FLAG] |= 0x08;
+				//Set to IR cart register to 0xC1 if receiving signal
+				if(temp_buffer[0] == 1) { mem->cart.huc_ir_input = 0x01; }
 
-				//Store byte from transfer into SB
-				sio_stat.transfer_byte = mem->memory_map[REG_SB];
-				mem->memory_map[REG_SB] = temp_buffer[0];
-
-				//Reset Bit 7 of SC
-				mem->memory_map[REG_SC] &= ~0x80;
-
-				//Send other Game Boy the old SB value
-				temp_buffer[0] = sio_stat.transfer_byte;
-				sio_stat.transfer_byte = mem->memory_map[REG_SB];
-
-				//Start hard sync timeout countdown
-				sio_stat.halt_counter = 0x400000;
-
-				//Reset hard sync if new SIO byte received
-				if((config::netplay_hard_sync) && (!sio_stat.use_hard_sync))
-				{
-					sio_stat.use_hard_sync = true;
-					
-				}
+				//Set to IR cart register to 0xC0 if receiving no signal
+				else { mem->cart.huc_ir_input = 0x00; }
 			}
 
-			//Otherwise, emulate a disconnected Link Cable
-			//Necessary for situations when connected by IR but not the Link Cable (and the game tries the Link Cable anyway) 
-			else { temp_buffer[0] = 0xFF; }
+			//Start hard sync timeout countdown
+			sio_stat.halt_counter = 0x400000;
 
-			if(SDLNet_TCP_Send(sender.host_socket, (void*)temp_buffer, 2) < 2)
+			//Reset hard sync if new IR signal received
+			if((config::netplay_hard_sync) && (!sio_stat.use_hard_sync))
 			{
-				std::cout<<"SIO::Error - Host failed to send data to client\n";
-				sio_stat.connected = false;
-				server.connected = false;
-				sender.connected = false;
-				return false;
+				sio_stat.use_hard_sync = true;
+			} 
+
+			//Send acknowlegdement
+			net_util::send_data(sender, temp_buffer, 2);
+
+			return true;
+		}
+
+		else if(temp_buffer[1] != 0) { return true; }
+
+		//Send transfer byte back to other Game Boy only if emulating the Link Cable
+		if(sio_stat.sio_type == GB_LINK)
+		{
+			//Raise SIO IRQ after sending byte
+			mem->memory_map[IF_FLAG] |= 0x08;
+
+			//Store byte from transfer into SB
+			sio_stat.transfer_byte = mem->memory_map[REG_SB];
+			mem->memory_map[REG_SB] = temp_buffer[0];
+
+			//Reset Bit 7 of SC
+			mem->memory_map[REG_SC] &= ~0x80;
+
+			//Send other Game Boy the old SB value
+			temp_buffer[0] = sio_stat.transfer_byte;
+			sio_stat.transfer_byte = mem->memory_map[REG_SB];
+
+			//Start hard sync timeout countdown
+			sio_stat.halt_counter = 0x400000;
+
+			//Reset hard sync if new SIO byte received
+			if((config::netplay_hard_sync) && (!sio_stat.use_hard_sync))
+			{
+				sio_stat.use_hard_sync = true;		
 			}
+		}
+
+		//Otherwise, emulate a disconnected Link Cable
+		//Necessary for situations when connected by IR but not the Link Cable (and the game tries the Link Cable anyway) 
+		else { temp_buffer[0] = 0xFF; }
+
+		if(net_util::send_data(sender, temp_buffer, 2) < 2)
+		{
+			std::cout<<"SIO::Error - Host failed to send data to client\n";
+			reset();
+			init();
+			return false;
 		}
 	}
 
@@ -924,12 +871,11 @@ bool DMG_SIO::request_sync()
 	temp_buffer[1] = 0xFF;
 
 	//Send the sync code 0xFF
-	if(SDLNet_TCP_Send(sender.host_socket, (void*)temp_buffer, 2) < 2)
+	if(net_util::send_data(sender, temp_buffer, 2) < 2)
 	{
 		std::cout<<"SIO::Error - Host failed to send data to client\n";
-		sio_stat.connected = false;
-		server.connected = false;
-		sender.connected = false;
+		reset();
+		init();
 		return false;
 	}
 
@@ -950,7 +896,7 @@ bool DMG_SIO::stop_sync()
 	temp_buffer[1] = 0xF1;
 
 	//Send the stop sync code 0xF1
-	SDLNet_TCP_Send(sender.host_socket, (void*)temp_buffer, 2);
+	net_util::send_data(sender, temp_buffer, 2);
 
 	sio_stat.sync = false;
 	sio_stat.use_hard_sync = false;
@@ -980,13 +926,9 @@ void DMG_SIO::process_network_communication()
 		//Try to accept incoming connections to the server
 		if(!server.connected)
 		{
-			if(server.remote_socket = SDLNet_TCP_Accept(server.host_socket))
+			if(net_util::accept_client(server))
 			{
 				std::cout<<"SIO::Client connected\n";
-				SDLNet_TCP_AddSocket(tcp_sockets, server.host_socket);
-				SDLNet_TCP_AddSocket(tcp_sockets, server.remote_socket);
-				server.connected = true;
-				server.remote_init = true;
 			}
 		}
 
@@ -994,12 +936,9 @@ void DMG_SIO::process_network_communication()
 		if(!sender.connected)
 		{
 			//Open a connection to listen on host's port
-			if(sender.host_socket = SDLNet_TCP_Open(&sender.host_ip))
+			if(net_util::accept_server(sender))
 			{
 				std::cout<<"SIO::Connected to server\n";
-				SDLNet_TCP_AddSocket(tcp_sockets, sender.host_socket);
-				sender.connected = true;
-				sender.host_init = true;
 			}
 		}
 
@@ -1028,7 +967,7 @@ void DMG_SIO::suspend_network_connection()
 		temp_buffer[0] = 0;
 		temp_buffer[1] = 0x80;
 		
-		SDLNet_TCP_Send(sender.host_socket, (void*)temp_buffer, 2);
+		net_util::send_data(sender, temp_buffer, 2);
 	}
 
 	#endif
@@ -1044,28 +983,28 @@ void DMG_SIO::resume_network_connection()
 	u8 temp_buffer[2];
 	temp_buffer[0] = temp_buffer[1] = 0;
 
+	if(server.tcp_sockets == NULL) { return; }
+
 	//Check the status of connection
-	SDLNet_CheckSockets(tcp_sockets, 0);
+	SDLNet_CheckSockets(server.tcp_sockets, 0);
 
 	//If this socket is active, receive the transfer
-	if(SDLNet_SocketReady(server.remote_socket))
+	//This is non-blocking
+	if(net_util::recv_data(server, temp_buffer, 2) > 0)
 	{
-		if(SDLNet_TCP_Recv(server.remote_socket, temp_buffer, 2) > 0)
+		//Stop sync
+		if(temp_buffer[1] == 0x81)
 		{
-			//Stop sync
-			if(temp_buffer[1] == 0x81)
-			{
-				std::cout<<"SIO::Netplay connection resumed.\n";
-				sio_stat.connected = true;
-			}
+			std::cout<<"SIO::Netplay connection resumed.\n";
+			sio_stat.connected = true;
 		}
 	}
 
 	//Send reconnect byte to another system
 	temp_buffer[0] = 0;
 	temp_buffer[1] = 0x81;
-		
-	SDLNet_TCP_Send(sender.host_socket, (void*)temp_buffer, 2);
+	
+	net_util::send_data(sender, temp_buffer, 2);
 
 	#endif
 }
@@ -1077,19 +1016,7 @@ void DMG_SIO::set_huc_ir_connection()
 
 	if(network_init)
 	{
-		//Close SDL_net and any current connections
-		if(server.host_socket != NULL)
-		{
-			SDLNet_TCP_DelSocket(tcp_sockets, server.host_socket);
-			SDLNet_TCP_Close(server.host_socket);
-		}
-
-		if(server.remote_socket != NULL)
-		{
-			SDLNet_TCP_DelSocket(tcp_sockets, server.remote_socket);
-			SDLNet_TCP_Close(server.remote_socket);
-		}
-
+		//Regular disconnect signal
 		if(sender.host_socket != NULL)
 		{
 			//Send disconnect byte to another system
@@ -1097,34 +1024,33 @@ void DMG_SIO::set_huc_ir_connection()
 			temp_buffer[0] = 0;
 			temp_buffer[1] = 0x80;
 		
-			SDLNet_TCP_Send(sender.host_socket, (void*)temp_buffer, 2);
-
-			SDLNet_TCP_DelSocket(tcp_sockets, sender.host_socket);
-			SDLNet_TCP_Close(sender.host_socket);
+			net_util::send_data(sender, temp_buffer, 2);
 		}
+
+		net_util::close_comm(server);
+		net_util::close_comm(sender);
 
 		config::netplay_id &= 0x0F;
 		mem->ir_stat.network_id &= 0x0F;
 
-		//Server info
-		server.host_socket = NULL;
-		server.host_init = false;
-		server.remote_socket = NULL;
-		server.remote_init = false;
-		server.connected = false;
-		server.port = config::netplay_server_port + (16 * config::netplay_id) + mem->ir_stat.network_id;
+		//Server and Client info
+		u16 server_port = config::netplay_server_port + (16 * config::netplay_id) + mem->ir_stat.network_id;
+		u16 client_port = config::netplay_server_port + (16 * mem->ir_stat.network_id) + config::netplay_id;
 
-		//Client info
-		sender.host_socket = NULL;
-		sender.host_init = false;
-		sender.connected = false;
-		sender.port = config::netplay_server_port + (16 * mem->ir_stat.network_id) + config::netplay_id;
+		net_util::setup_comm(server, server_port, NET_COMM_SERVER);
+		net_util::setup_comm(sender, client_port, NET_COMM_CLIENT);
 
 		//Clear up any syncing when the instance doing the switching suspends a network connection
 		sio_stat.sync = false;
 		sio_stat.sync_counter = 0;
 
-		if(sio_stat.connected) { std::cout<<"SIO::Netplay connection suspended.\n"; }
+		if(sio_stat.connected)
+		{
+			std::cout<<"SIO::Netplay connection suspended.\n";
+			reset();
+			init();
+			return;
+		}
 
 		mem->ir_stat.try_connection = true;
 		sio_stat.connected = false;
@@ -1137,14 +1063,14 @@ void DMG_SIO::set_huc_ir_connection()
 		}
 
 		//Setup server, resolve the server with NULL as the hostname, the server will now listen for connections
-		if(SDLNet_ResolveHost(&server.host_ip, NULL, server.port) < 0)
+		if(net_util::resolve_host(server, "") < 0)
 		{
 			std::cout<<"SIO::Error - Server could not resolve hostname\n";
 			return;
 		}
 
 		//Open a connection to listen on host's port
-		if(!(server.host_socket = SDLNet_TCP_Open(&server.host_ip)))
+		if(!net_util::open_tcp(server))
 		{
 			std::cout<<"SIO::Error - Server could not open a connection on Port " << server.port << "\n";
 			return;
@@ -1153,7 +1079,7 @@ void DMG_SIO::set_huc_ir_connection()
 		server.host_init = true;
 
 		//Setup client, listen on another port
-		if(SDLNet_ResolveHost(&sender.host_ip, config::netplay_client_ip.c_str(), sender.port) < 0)
+		if(net_util::resolve_host(sender, config::netplay_client_ip) < 0)
 		{
 			std::cout<<"SIO::Error - Client could not resolve hostname\n";
 			return;
@@ -1732,6 +1658,10 @@ void DMG_SIO::bardigun_process()
 				{
 					bardigun_scanner.current_state = BARDIGUN_SEND_BARCODE;
 					bardigun_scanner.barcode_pointer = 0;
+
+					//OSD
+					config::osd_message = "BARCODE SWIPED";
+					config::osd_count = 180;
 				}
 			}
 			
@@ -1745,10 +1675,6 @@ void DMG_SIO::bardigun_process()
 			if(bardigun_scanner.barcode_pointer == bardigun_scanner.data.size())
 			{
 				bardigun_scanner.current_state = BARDIGUN_INACTIVE;
-
-				//OSD
-				config::osd_message = "BARCODE SWIPED";
-				config::osd_count = 180;
 			}
 
 			break;

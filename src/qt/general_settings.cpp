@@ -1143,6 +1143,18 @@ gen_settings::gen_settings(QWidget *parent) : QDialog(parent)
 	bcg_chip_4_layout->setContentsMargins(6, 0, 0, 0);
 	bcg_chip_4_set->setLayout(bcg_chip_4_layout);
 
+	//International Beast Link Gate
+	intl_bgl_set = new QWidget(controls);
+	QLabel* intl_bgl_label = new QLabel("Enable International Beast Link Gate: ");
+	intl_beast_link_gate_enable = new QCheckBox(intl_bgl_set);
+	intl_beast_link_gate_enable->setToolTip("Enabling this allows the Beast Link Gate to work exclusively with the USA and EUR versions of Mega Man Battle Network 6.\n If disabled, it will only work with the Japanese version.");
+
+	QHBoxLayout* intl_bgl_layout = new QHBoxLayout;
+	intl_bgl_layout->setAlignment(Qt::AlignTop | Qt::AlignLeft);
+	intl_bgl_layout->addWidget(intl_beast_link_gate_enable);
+	intl_bgl_layout->addWidget(intl_bgl_label);
+	intl_bgl_set->setLayout(intl_bgl_layout);
+
 	//Virtual Cursor Settings - Enable VC
 	vc_enable_set = new QWidget(controls);
 	QLabel* vc_enable_label = new QLabel("Enable Virtual Cursor", vc_enable_set);
@@ -1237,6 +1249,7 @@ gen_settings::gen_settings(QWidget *parent) : QDialog(parent)
 	controls_layout->addWidget(bcg_chip_2_set);
 	controls_layout->addWidget(bcg_chip_3_set);
 	controls_layout->addWidget(bcg_chip_4_set);
+	controls_layout->addWidget(intl_bgl_set);
 	control_id_end[3] = controls_layout->count();
 
 	controls_layout->addWidget(vc_enable_set);
@@ -1270,6 +1283,7 @@ gen_settings::gen_settings(QWidget *parent) : QDialog(parent)
 	bcg_chip_2_set->setVisible(false);
 	bcg_chip_3_set->setVisible(false);
 	bcg_chip_4_set->setVisible(false);
+	intl_bgl_set->setVisible(false);
 
 	vc_enable_set->setVisible(false);
 	vc_opacity_set->setVisible(false);
@@ -1407,6 +1421,20 @@ gen_settings::gen_settings(QWidget *parent) : QDialog(parent)
 	gbma_address_layout->addWidget(gbma_update);
 	gbma_address_set->setLayout(gbma_address_layout);
 
+	//Netplay - GBMA port
+	QWidget* gbma_port_set = new QWidget(netplay);
+	QLabel* gbma_port_label = new QLabel("MAGB HTTP Port : ");
+	gbma_port = new QSpinBox(netplay);
+	gbma_port->setMinimum(0);
+	gbma_port->setMaximum(0xFFFF);
+	gbma_port->setToolTip("HTTP port of Mobile Adapter GB server");
+
+	QHBoxLayout* gbma_port_layout = new QHBoxLayout;
+	gbma_port_layout->setAlignment(Qt::AlignTop | Qt::AlignLeft);
+	gbma_port_layout->addWidget(gbma_port_label);
+	gbma_port_layout->addWidget(gbma_port);
+	gbma_port_set->setLayout(gbma_port_layout);
+
 	QVBoxLayout* netplay_layout = new QVBoxLayout;
 	netplay_layout->setAlignment(Qt::AlignTop | Qt::AlignLeft);
 	netplay_layout->addWidget(enable_netplay_set);
@@ -1419,6 +1447,7 @@ gen_settings::gen_settings(QWidget *parent) : QDialog(parent)
 	netplay_layout->addWidget(netplay_id_set);
 	netplay_layout->addWidget(ip_address_set);
 	netplay_layout->addWidget(gbma_address_set);
+	netplay_layout->addWidget(gbma_port_set);
 	netplay->setLayout(netplay_layout);
 
 	//Path settings - DMG BIOS
@@ -1608,6 +1637,7 @@ gen_settings::gen_settings(QWidget *parent) : QDialog(parent)
 	connect(dead_zone, SIGNAL(valueChanged(int)), this, SLOT(dead_zone_change()));
 	connect(input_device, SIGNAL(currentIndexChanged(int)), this, SLOT(input_device_change()));
 	connect(controls_combo, SIGNAL(currentIndexChanged(int)), this, SLOT(switch_control_layout()));
+	connect(intl_beast_link_gate_enable, SIGNAL(stateChanged(int)), this, SLOT(set_beast_link_gate_region()));
 	connect(enable_netplay, SIGNAL(stateChanged(int)), this, SLOT(set_netplay()));
 	connect(hard_sync, SIGNAL(stateChanged(int)), this, SLOT(set_hard_sync()));
 	connect(net_gate, SIGNAL(stateChanged(int)), this, SLOT(set_net_gate()));
@@ -1627,6 +1657,7 @@ gen_settings::gen_settings(QWidget *parent) : QDialog(parent)
 	connect(netplay_id, SIGNAL(valueChanged(int)), this, SLOT(update_netplay_id()));
 	connect(ip_update, SIGNAL(clicked()), this, SLOT(update_ip_addr()));
 	connect(gbma_update, SIGNAL(clicked()), this, SLOT(update_gbma_addr()));
+	connect(gbma_port, SIGNAL(valueChanged(int)), this, SLOT(update_gbma_port()));
 	connect(data_folder, SIGNAL(accepted()), this, SLOT(select_folder()));
 	connect(data_folder, SIGNAL(rejected()), this, SLOT(reject_folder()));
 
@@ -2223,6 +2254,9 @@ void gen_settings::set_ini_options()
 	//Virtual Cursor Timeout
 	vc_timeout->setValue(config::vc_timeout);
 
+	//International Beast Link Gate
+	intl_beast_link_gate_enable->setChecked(config::use_intl_beast_link_gate);
+
 	//Netplay
 	if(config::use_netplay) { enable_netplay->setChecked(true); }
 	else { enable_netplay->setChecked(false); }
@@ -2270,6 +2304,7 @@ void gen_settings::set_ini_options()
 	netplay_id->setValue(config::netplay_id);
 	ip_address->setText(QString::fromStdString(config::netplay_client_ip));
 	gbma_address->setText(QString::fromStdString(config::gbma_server));
+	gbma_port->setValue(config::gbma_server_http_port);
 
 	dmg_bios->setText(path_1);
 	gbc_bios->setText(path_2);
@@ -2964,6 +2999,13 @@ void gen_settings::input_device_change()
 /****** Dynamically changes the core pad's dead-zone ******/
 void gen_settings::dead_zone_change() { config::dead_zone = dead_zone->value(); }
 
+/****** Sets the region of the Beast Link Gate to Japan or International ******/
+void gen_settings::set_beast_link_gate_region()
+{
+	if(intl_beast_link_gate_enable->isChecked()) { config::use_intl_beast_link_gate = true; }
+	else { config::use_intl_beast_link_gate = false; }
+}
+
 /****** Sets the netplay enable option ******/
 void gen_settings::set_netplay()
 {
@@ -3139,6 +3181,12 @@ void gen_settings::update_gbma_addr()
 	{
 		config::gbma_server = temp;
 	}
+}
+
+/****** Sets the Mobile Adapter GB HTTP port ******/
+void gen_settings::update_gbma_port()
+{
+	config::gbma_server_http_port = server_port->value();
 }
 
 /****** Prepares GUI to receive input for controller configuration ******/

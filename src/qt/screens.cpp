@@ -63,28 +63,12 @@ void soft_screen::paintEvent(QPaintEvent* event)
 	}
 }
 
-/****** Software screen resize event ******/
-void soft_screen::resizeEvent(QResizeEvent* event)
-{
-	if(main_menu::gbe_plus == NULL) { return; }
-
-	//Grab test dimensions, look at max resolution for fullscreen dimensions
-	u32 test_width = qt_gui::draw_surface->fullscreen_mode ? qt_gui::draw_surface->display_width : qt_gui::draw_surface->width();
-	u32 test_height = qt_gui::draw_surface->fullscreen_mode ? qt_gui::draw_surface->display_height : (qt_gui::draw_surface->height() - qt_gui::draw_surface->menu_height);
-
-	//Adjust screen to fit expected dimensions no matter what
-	if((width() != test_width) || (height() != test_height))
-	{
-		resize(test_width, test_height);
-	}
-}
-
 /****** Hardware screen constructor ******/
-hard_screen::hard_screen(QWidget *parent) : QGLWidget(parent)
+hard_screen::hard_screen(QWidget *parent) : QOpenGLWidget(parent)
 {
 	//Set up Qt to use OpenGL 3.3
 	screen_format.setVersion(3, 3);
-	screen_format.setProfile(QGLFormat::CoreProfile);
+	screen_format.setProfile(QSurfaceFormat::CoreProfile);
 	screen_format.setSwapInterval(0);
 	setFormat(screen_format);
 
@@ -200,24 +184,14 @@ void hard_screen::paintGL()
 }
 
 /****** Hardware screen resize event ******/
-void hard_screen::resizeEvent(QResizeEvent* event)
+void hard_screen::resizeGL(int width, int height)
 {
 	if(main_menu::gbe_plus == NULL) { return; }
 
-	//Grab test dimensions, look at max resolution for fullscreen dimensions
-	u32 test_width = qt_gui::draw_surface->fullscreen_mode ? qt_gui::draw_surface->display_width : qt_gui::draw_surface->width();
-	u32 test_height = qt_gui::draw_surface->fullscreen_mode ? qt_gui::draw_surface->display_height : (qt_gui::draw_surface->height() - qt_gui::draw_surface->menu_height);
+	config::win_width = width;
+	config::win_height = height;
 
-	//Adjust screen to fit expected dimensions no matter what
-	if((width() != test_width) || (height() != test_height))
-	{
-		resize(test_width, test_height);
-	}
-
-	config::win_width = width();
-	config::win_height = height();
-
-	gwin.resize(width(), height());
+	gwin.resize(width, height);
 	calculate_screen_size();
 }
 

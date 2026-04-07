@@ -23,6 +23,8 @@
 #include "mmu.h"
 #include "sio_data.h"
 
+#include "common/net_util.h"
+
 class DMG_SIO
 {
 	public:
@@ -40,46 +42,16 @@ class DMG_SIO
 	#ifdef GBE_NETPLAY
 
 	//Receiving server
-	struct tcp_server
-	{
-		TCPsocket host_socket, remote_socket;
-		IPaddress host_ip;
-		bool connected;
-		bool host_init;
-		bool remote_init;
-		u16 port;
-	} server;
+	gbe_net_comm server;
 
 	//Sending client
-	struct tcp_sender
-	{
-		TCPsocket host_socket;
-		IPaddress host_ip;
-		bool connected;
-		bool host_init;
-		u16 port;
-	} sender;
+	gbe_net_comm sender;
 
 	//Receiving server (4-Player)
-	struct four_player_tcp_server
-	{
-		TCPsocket host_socket, remote_socket;
-		IPaddress host_ip;
-		bool connected;
-		u16 port;
-	} four_player_server[3];
+	gbe_net_comm four_player_server[3];
 
 	//Sending client (4-Player)
-	struct four_player_tcp_sender
-	{
-		TCPsocket host_socket;
-		IPaddress host_ip;
-		bool connected;
-		u16 port;
-	} four_player_sender[3];
-
-	SDLNet_SocketSet tcp_sockets;
-	SDLNet_SocketSet four_player_tcp_sockets;
+	gbe_net_comm four_player_sender[3];
 
 	#endif
 

@@ -48,33 +48,26 @@ bool MIN_MMU::init_ir()
 	ir_stat.sync_clock = config::netplay_sync_threshold;
 	ir_stat.network_id = config::netplay_id;
 
-	//Server info
+	//Server and Client info
 	for(u32 x = 0; x < 10; x++)
 	{
-		server[x].host_socket = NULL;
-		server[x].host_init = false;
-		server[x].remote_socket = NULL;
-		server[x].remote_init = false;
-		server[x].connected = false;
-		server[x].port = config::netplay_server_port + (10 * config::netplay_id) + x;
-			
-		//Client info
-		sender[x].host_socket = NULL;
-		sender[x].host_init = false;
-		sender[x].connected = false;
-		sender[x].port = config::netplay_server_port + (10 * x) + config::netplay_id;
+		u16 server_port = config::netplay_server_port + (10 * config::netplay_id) + x;
+		u16 client_port = config::netplay_server_port + (10 * x) + config::netplay_id;
+
+		net_util::setup_comm(server[x], server_port, NET_COMM_SERVER);
+		net_util::setup_comm(sender[x], client_port, NET_COMM_CLIENT);
 
 		if(x != config::netplay_id)
 		{
 			//Setup server, resolve the server with NULL as the hostname, the server will now listen for connections
-			if(SDLNet_ResolveHost(&server[x].host_ip, NULL, server[x].port) < 0)
+			if(net_util::resolve_host(server[x], "") < 0)
 			{
 				std::cout<<"IR::Error - Server could not resolve hostname\n";
 				return false;
 			}
 
 			//Open a connection to listen on host's port
-			if(!(server[x].host_socket = SDLNet_TCP_Open(&server[x].host_ip)))
+			if(!net_util::open_tcp(server[x]))
 			{
 				std::cout<<"IR::Error - Server could not open a connection on Port " << server[x].port << "\n";
 				return false;
@@ -83,14 +76,11 @@ bool MIN_MMU::init_ir()
 			server[x].host_init = true;
 
 			//Setup client, listen on another port
-			if(SDLNet_ResolveHost(&sender[x].host_ip, config::netplay_client_ip.c_str(), sender[x].port) < 0)
+			if(net_util::resolve_host(sender[x], config::netplay_client_ip) < 0)
 			{
 				std::cout<<"IR::Error - Client could not resolve hostname\n";
 				return false;
 			}
-
-			//Create sockets sets
-			tcp_sockets[x] = SDLNet_AllocSocketSet(3);
 		}
 	}
 
@@ -121,42 +111,19 @@ void MIN_MMU::disconnect_ir()
 
 	for(u8 x = 0; x < 10; x++)
 	{
-
-		if(x == config::netplay_id) { continue; }
-
-
-		//Close SDL_net and any current connections
-		if(server[x].host_socket != NULL)
-		{
-			SDLNet_TCP_DelSocket(tcp_sockets[x], server[x].host_socket);
-			if(server[x].host_init) { SDLNet_TCP_Close(server[x].host_socket); }
-		}
-
-		if(server[x].remote_socket != NULL)
-		{
-			SDLNet_TCP_DelSocket(tcp_sockets[x], server[x].remote_socket);
-			if(server[x].remote_init) { SDLNet_TCP_Close(server[x].remote_socket); }
-		}
-
-		if(sender[x].host_socket != NULL)
+		if(x != config::netplay_id)
 		{
 			//Send disconnect byte to another system
 			u8 temp_buffer[2];
 			temp_buffer[0] = 0;
 			temp_buffer[1] = 0x80;
 		
-			SDLNet_TCP_Send(sender[x].host_socket, (void*)temp_buffer, 2);
-
-			SDLNet_TCP_DelSocket(tcp_sockets[x], sender[x].host_socket);
-			if(sender[x].host_init) { SDLNet_TCP_Close(sender[x].host_socket); }
+			net_util::send_data(sender[x], temp_buffer, 2);
 		}
 
-		server[x].connected = false;
-		sender[x].connected = false;
-
-		server[x].host_init = false;
-		server[x].remote_init = false;
-		sender[x].host_init = false;
+		//Close SDL_net and any current connections
+		net_util::close_comm(server[x]);
+		net_util::close_comm(sender[x]);
 
 		ir_stat.connected[x] = false;
 	}
@@ -169,6 +136,28 @@ void MIN_MMU::disconnect_ir()
 	ir_stat.sync = false;
 
 	std::cout<<"IR::Shutdown\n";
+}
+
+/****** Resets netplay for IR communications ******/
+void MIN_MMU::reset_ir()
+{
+	#ifdef GBE_NETPLAY
+
+	ir_stat.sync = false;
+
+	disconnect_ir();
+
+	//Initialize hard syncing
+	if(config::netplay_hard_sync)
+	{
+		//The instance with the highest server port will start off waiting in sync mode
+		ir_stat.sync_counter = (config::netplay_server_port > config::netplay_client_port) ? config::netplay_sync_threshold : 0;
+		ir_stat.sync_balance = (config::netplay_server_port > config::netplay_client_port) ? 4 : 0;
+	}
+
+	init_ir();
+
+	#endif
 }
 
 /****** Sets up netplay for IR communications ******/
@@ -187,13 +176,9 @@ void MIN_MMU::process_network_communication()
 		//Try to accept incoming connections to the server
 		if(!server[id].connected)
 		{
-			if(server[id].remote_socket = SDLNet_TCP_Accept(server[id].host_socket))
+			if(net_util::accept_client(server[id]))
 			{
 				std::cout<<"IR::Client connected\n";
-				SDLNet_TCP_AddSocket(tcp_sockets[id], server[id].host_socket);
-				SDLNet_TCP_AddSocket(tcp_sockets[id], server[id].remote_socket);
-				server[id].connected = true;
-				server[id].remote_init = true;
 				ir_stat.try_connection = true;
 			}
 		}
@@ -202,12 +187,9 @@ void MIN_MMU::process_network_communication()
 		if(!sender[id].connected && ir_stat.try_connection)
 		{
 			//Open a connection to listen on host's port
-			if(sender[id].host_socket = SDLNet_TCP_Open(&sender[id].host_ip))
+			if(net_util::accept_server(sender[id]))
 			{
 				std::cout<<"IR::Connected to server\n";
-				SDLNet_TCP_AddSocket(tcp_sockets[id], sender[id].host_socket);
-				sender[id].connected = true;
-				sender[id].host_init = true;
 			}
 		}
 
@@ -241,12 +223,10 @@ bool MIN_MMU::process_ir()
 	ir_stat.signal = 0;
 	ir_stat.debug_cycles = 0;
 
-	if(SDLNet_TCP_Send(sender[id].host_socket, (void*)temp_buffer, 2) < 2)
+	if(net_util::send_data(sender[id], temp_buffer, 2) < 2)
 	{
 		std::cout<<"IR::Error - Host failed to send data to client\n";
-		ir_stat.connected[id] = false;
-		server[id].connected = false;
-		sender[id].connected = false;
+		reset_ir();
 		return false;
 	}
 
@@ -332,89 +312,85 @@ bool MIN_MMU::recv_byte()
 	temp_buffer[0] = temp_buffer[1] = 0;
 
 	//Check the status of connection
-	SDLNet_CheckSockets(tcp_sockets[id], 0);
+	SDLNet_CheckSockets(server[id].tcp_sockets, 0);
 
 	//If this socket is active, receive the transfer
-	if(SDLNet_SocketReady(server[id].remote_socket))
+	if(net_util::recv_data(server[id], temp_buffer, 2) > 0)
 	{
-		if(SDLNet_TCP_Recv(server[id].remote_socket, temp_buffer, 2) > 0)
+		//Stop sync
+		if((temp_buffer[1] == 0xFF) && (ir_stat.sync))
 		{
-			//Stop sync
-			if((temp_buffer[1] == 0xFF) && (ir_stat.sync))
+			ir_stat.sync = false;
+			ir_stat.sync_counter = 0;
+			ir_stat.sync_balance = temp_buffer[0];
+			return true;
+		}
+
+		//Stop IR Hard Sync
+		else if(temp_buffer[1] == 0xF1)
+		{
+			ir_stat.sync_timeout = 0;
+			ir_stat.sync = false;
+			return true;
+		}
+
+		//Stop sync with acknowledgement
+		else if(temp_buffer[1] == 0xF0)
+		{
+			ir_stat.sync = false;
+			ir_stat.sync_counter = 0;
+
+			temp_buffer[1] = 0x1;
+
+			//Send acknowlegdement
+			net_util::send_data(sender[id], temp_buffer, 2);
+
+			return true;
+		}
+
+		//Disconnect netplay
+		else if(temp_buffer[1] == 0x80)
+		{
+			std::cout<<"IR::Netplay connection suspended.\n";
+			reset_ir();
+
+			return true;
+		}
+
+		//Receive IR signal
+		else if(temp_buffer[1] == 0x40)
+		{	
+			u8 last_signal = ir_stat.signal;
+
+			//Only receive data if IO port has IR enabled
+			if((memory_map[PM_IO_DATA] & 0x20) == 0)
 			{
-				ir_stat.sync = false;
-				ir_stat.sync_counter = 0;
-				ir_stat.sync_balance = temp_buffer[0];
-				return true;
-			}
-
-			//Stop IR Hard Sync
-			else if(temp_buffer[1] == 0xF1)
-			{
-				ir_stat.sync_timeout = 0;
-				ir_stat.sync = false;
-				return true;
-			}
-
-			//Stop sync with acknowledgement
-			else if(temp_buffer[1] == 0xF0)
-			{
-				ir_stat.sync = false;
-				ir_stat.sync_counter = 0;
-
-				temp_buffer[1] = 0x1;
-
-				//Send acknowlegdement
-				SDLNet_TCP_Send(sender[id].host_socket, (void*)temp_buffer, 2);
-
-				return true;
-			}
-
-			//Disconnect netplay
-			else if(temp_buffer[1] == 0x80)
-			{
-				std::cout<<"IR::Netplay connection terminated. Restart to reconnect.\n";
-				ir_stat.connected[id] = false;
-				ir_stat.sync = false;
-
-				return true;
-			}
-
-			//Receive IR signal
-			else if(temp_buffer[1] == 0x40)
-			{	
-				u8 last_signal = ir_stat.signal;
-
-				//Only receive data if IO port has IR enabled
-				if((memory_map[PM_IO_DATA] & 0x20) == 0)
+				//Set Bit 0 of IO Port according to result
+				if(temp_buffer[0] == 1)
 				{
-					//Set Bit 0 of IO Port according to result
-					if(temp_buffer[0] == 1)
-					{
-						memory_map[PM_IO_DATA] |= 0x2;
-						ir_stat.signal = 0;
-					}
-
-					else
-					{
-						memory_map[PM_IO_DATA] &= ~0x2;
-						ir_stat.signal = 1;
-						ir_stat.fade = 64;
-					}
-
-					//Reset hard sync timeout at 1/4 emulated second
-					ir_stat.sync_timeout = 524288;
+					memory_map[PM_IO_DATA] |= 0x2;
+					ir_stat.signal = 0;
 				}
 
-				//Raise IR IRQ when going from LOW to HIGH
-				if((last_signal == 0) && (ir_stat.signal == 1)) { update_irq_flags(IR_RECEIVER_IRQ); }
+				else
+				{
+					memory_map[PM_IO_DATA] &= ~0x2;
+					ir_stat.signal = 1;
+					ir_stat.fade = 64;
+				}
 
-				//Send acknowlegdement
-				temp_buffer[1] = 0x20;
-				SDLNet_TCP_Send(sender[id].host_socket, (void*)temp_buffer, 2);
-
-				return true;
+				//Reset hard sync timeout at 1/4 emulated second
+				ir_stat.sync_timeout = 524288;
 			}
+
+			//Raise IR IRQ when going from LOW to HIGH
+			if((last_signal == 0) && (ir_stat.signal == 1)) { update_irq_flags(IR_RECEIVER_IRQ); }
+
+			//Send acknowlegdement
+			temp_buffer[1] = 0x20;
+			net_util::send_data(sender[id], temp_buffer, 2);
+
+			return true;
 		}
 	}
 
@@ -441,12 +417,10 @@ bool MIN_MMU::request_sync()
 	temp_buffer[1] = 0xFF;
 
 	//Send the sync code 0xFF
-	if(SDLNet_TCP_Send(sender[id].host_socket, (void*)temp_buffer, 2) < 2)
+	if(net_util::send_data(sender[id], temp_buffer, 2) < 2)
 	{
 		std::cout<<"IR::Error - Host failed to send data to client\n";
-		ir_stat.connected[id] = false;
-		server[id].connected = false;
-		sender[id].connected = false;
+		reset_ir();
 		return false;
 	}
 
@@ -472,12 +446,10 @@ bool MIN_MMU::stop_sync()
 	temp_buffer[1] = 0xF1;
 
 	//Send the stop hard sync code 0xF1
-	if(SDLNet_TCP_Send(sender[id].host_socket, (void*)temp_buffer, 2) < 2)
+	if(net_util::send_data(sender[id], temp_buffer, 2) < 2)
 	{
 		std::cout<<"IR::Error - Host failed to send data to client\n";
-		ir_stat.connected[id] = false;
-		server[id].connected = false;
-		sender[id].connected = false;
+		reset_ir();
 		return false;
 	}
 

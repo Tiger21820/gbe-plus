@@ -5,6 +5,7 @@ set(SRCS
 	osd.cpp
 	debug_util.cpp
 	net_util.cpp
+	info.cpp
 	)
 
 set(HEADERS
@@ -16,12 +17,15 @@ set(HEADERS
 	dmg_core_pad.h
 	debug_util.h
 	net_util.h
+	info.h
 	)
 
 
 add_library(common STATIC ${SRCS} ${HEADERS})
 
 target_link_libraries(common SDL2::SDL2)
+
+add_dependencies(common gbe_info)
 
 if (IMAGE_FORMATS)
 	target_link_libraries(common SDL2_image::SDL2_image)

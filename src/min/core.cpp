@@ -149,9 +149,19 @@ void MIN_core::reset()
 void MIN_core::load_state(u8 slot)
 {
 	std::string id = (slot > 0) ? util::to_str(slot) : "";
+	std::string state_file = "";
 
-	std::string state_file = config::rom_file + ".ss";
-	state_file += id;
+	//Use config save path if applicable
+	if(!config::save_path.empty())
+	{
+		state_file = config::save_path + util::get_filename_from_path(config::rom_file);
+		state_file = state_file + ".ss" + id;
+	}
+
+	else
+	{
+		state_file = config::rom_file + ".ss" + id;
+	}
 
 	u32 offset = 0;
 
@@ -192,9 +202,19 @@ void MIN_core::load_state(u8 slot)
 void MIN_core::save_state(u8 slot)
 {
 	std::string id = (slot > 0) ? util::to_str(slot) : "";
+	std::string state_file = "";
 
-	std::string state_file = config::rom_file + ".ss";
-	state_file += id;
+	//Use config save path if applicable
+	if(!config::save_path.empty())
+	{
+		state_file = config::save_path + util::get_filename_from_path(config::rom_file);
+		state_file = state_file + ".ss" + id;
+	}
+
+	else
+	{
+		state_file = config::rom_file + ".ss" + id;
+	}
 
 	if(!set_save_state_info(state_file)) { return; }
 	if(!core_cpu.cpu_write(state_file)) { return; }
@@ -483,7 +503,7 @@ void MIN_core::handle_hotkey(SDL_Event& event)
 		SDL_PauseAudio(1);
 		std::cout<<"EMU::Paused\n";
 
-		if((config::sdl_render) && (core_cpu.controllers.video.window != NULL))
+		if((config::sdl_render) && (core_cpu.controllers.video.window != nullptr))
 		{
 			config::title.str("GBE+ Paused");
 			SDL_SetWindowTitle(core_cpu.controllers.video.window, config::title.str().c_str());

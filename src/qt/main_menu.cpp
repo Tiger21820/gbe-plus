@@ -17,6 +17,7 @@
 
 #include "common/config.h"
 #include "common/util.h"
+#include "common/info.h"
 
 /****** Main menu constructor ******/
 main_menu::main_menu(QWidget *parent) : QWidget(parent)
@@ -261,6 +262,9 @@ main_menu::main_menu(QWidget *parent) : QWidget(parent)
 	settings = new gen_settings();
 	settings->set_ini_options();
 
+	//Handle Special Cart setting separately via CLI args parsed above
+	settings->special_cart->setCurrentIndex(config::cart_type);
+
 	//Set up DMG-GBC debugger
 	main_menu::dmg_debugger = new dmg_debug();
 	main_menu::dmg_debugger->hide();
@@ -279,6 +283,8 @@ main_menu::main_menu(QWidget *parent) : QWidget(parent)
 	font.setBold(true);
 	emu_title->setFont(font);
 
+	std::string hash_str = "Revision: " + gbe_info::get_hash();
+
 	QImage logo(QString::fromStdString(config::cfg_path + "data/icons/gbe_plus.png"));
 	logo = logo.scaled(128, 128);
 	QLabel* emu_desc = new QLabel("A GB/GBC/GBA/NDS/Pokemon Mini emulator");
@@ -286,6 +292,7 @@ main_menu::main_menu(QWidget *parent) : QWidget(parent)
 	QLabel* emu_proj_copyright = new QLabel("Copyright GBE+ Team 2014-2026");
 	QLabel* emu_license = new QLabel("This program is licensed under the GNU GPLv2");
 	QLabel* emu_site = new QLabel("<a href=\"https://github.com/shonumi/gbe-plus/\">GBE+ on GitHub</a>");
+	QLabel* emu_hash = new QLabel(QString::fromStdString(hash_str));
 	emu_site->setOpenExternalLinks(true);
 	QLabel* emu_logo = new QLabel;
 	emu_logo->setPixmap(QPixmap::fromImage(logo));
@@ -297,6 +304,7 @@ main_menu::main_menu(QWidget *parent) : QWidget(parent)
 	about_layout->addWidget(emu_proj_copyright, 0, Qt::AlignCenter | Qt::AlignTop);
 	about_layout->addWidget(emu_license, 0, Qt::AlignCenter | Qt::AlignTop);
 	about_layout->addWidget(emu_site, 0, Qt::AlignCenter | Qt::AlignTop);
+	about_layout->addWidget(emu_hash, 0, Qt::AlignCenter | Qt::AlignTop);
 	about_layout->addWidget(emu_logo, 0, Qt::AlignCenter | Qt::AlignTop);
 	about_layout->addWidget(about_button);
 	about_box->setLayout(about_layout);
@@ -349,7 +357,7 @@ void main_menu::open_file()
 	SDL_PauseAudio(0);
 
 	//Close the core
-	if(main_menu::gbe_plus != NULL) 
+	if(main_menu::gbe_plus != nullptr) 
 	{
 		main_menu::gbe_plus->shutdown();
 		main_menu::gbe_plus->core_emu::~core_emu();
@@ -366,8 +374,8 @@ void main_menu::open_file()
 	config::render_external_hw = render_screen_hw;
 	config::sample_rate = settings->sample_rate;
 
-	if(qt_gui::screen != NULL) { delete qt_gui::screen; }
-	qt_gui::screen = NULL;
+	if(qt_gui::screen != nullptr) { delete qt_gui::screen; }
+	qt_gui::screen = nullptr;
 
 	//Search the recent files list and add this path to it
 	bool add_recent = true;
@@ -416,7 +424,7 @@ void main_menu::open_am3_fldr()
 	if(folder_name.isNull()) { SDL_PauseAudio(0); return; }
 
 	//Close the core
-	if(main_menu::gbe_plus != NULL) 
+	if(main_menu::gbe_plus != nullptr) 
 	{
 		main_menu::gbe_plus->shutdown();
 		main_menu::gbe_plus->core_emu::~core_emu();
@@ -427,8 +435,8 @@ void main_menu::open_am3_fldr()
 	config::render_external_hw = render_screen_hw;
 	config::sample_rate = settings->sample_rate;
 
-	if(qt_gui::screen != NULL) { delete qt_gui::screen; }
-	qt_gui::screen = NULL;
+	if(qt_gui::screen != nullptr) { delete qt_gui::screen; }
+	qt_gui::screen = nullptr;
 
 	config::use_am3_folder = true;
 	config::cart_type = AGB_AM3;
@@ -462,7 +470,7 @@ void main_menu::open_no_cart()
 	}
 
 	//Close the core
-	if(main_menu::gbe_plus != NULL) 
+	if(main_menu::gbe_plus != nullptr) 
 	{
 		main_menu::gbe_plus->shutdown();
 		main_menu::gbe_plus->core_emu::~core_emu();
@@ -473,8 +481,8 @@ void main_menu::open_no_cart()
 	config::render_external_hw = render_screen_hw;
 	config::sample_rate = settings->sample_rate;
 
-	if(qt_gui::screen != NULL) { delete qt_gui::screen; }
-	qt_gui::screen = NULL;
+	if(qt_gui::screen != nullptr) { delete qt_gui::screen; }
+	qt_gui::screen = nullptr;
 
 	config::rom_file = "NOCART";
 	config::gb_type = settings->sys_type->currentIndex();
@@ -623,7 +631,7 @@ std::string main_menu::get_save_state_date(std::string filename)
 /****** Updates save state list when a game is running ******/
 void main_menu::update_save_state_list(QMenu* ss_menu)
 {
-	if(main_menu::gbe_plus == NULL) { return; }
+	if(main_menu::gbe_plus == nullptr) { return; }
 
 	QList<QAction*> ss_actions = ss_menu->actions();
 
@@ -631,7 +639,20 @@ void main_menu::update_save_state_list(QMenu* ss_menu)
 
 	for(u32 x = 0; x < ss_actions.size(); x++)
 	{
-		std::string filename = config::rom_file + ".ss" + ((x) ? util::to_str(x) : "");
+		std::string filename = ""; 
+
+		//Use config save path if applicable
+		if(!config::save_path.empty())
+		{
+			filename = config::save_path + util::get_filename_from_path(config::rom_file);
+			filename = filename + ".ss" + ((x) ? util::to_str(x) : "");
+		}
+
+		else
+		{
+			filename = config::rom_file + ".ss" + ((x) ? util::to_str(x) : "");
+		}
+
 		std::string date = get_save_state_date(filename);
 		std::string final_str = "Slot " + util::to_str(x) + "    " + date;
 
@@ -650,7 +671,7 @@ void main_menu::select_card_file()
 	config::external_card_file = filename.toStdString();
 
 	//Tell DMG-GBC core to update data
-	if((config::gb_type >= SYS_AUTO) && (config::gb_type <= SYS_GBC) && (main_menu::gbe_plus != NULL))
+	if((config::gb_type >= SYS_AUTO) && (config::gb_type <= SYS_GBC) && (main_menu::gbe_plus != nullptr))
 	{
 		if(main_menu::gbe_plus->get_core_data(1) == 0)
 		{
@@ -698,7 +719,7 @@ void main_menu::select_data_file()
 	if(filename.isNull()) { SDL_PauseAudio(0); return; }
 
 	//Automatically save Soul Doll data when switching
-	if((main_menu::gbe_plus != NULL) && (config::gb_type == SYS_GBA) && (config::sio_device == SIO_SOUL_DOLL_ADAPTER))
+	if((main_menu::gbe_plus != nullptr) && (config::gb_type == SYS_GBA) && (config::sio_device == SIO_SOUL_DOLL_ADAPTER))
 	{
 		gbe_plus->get_core_data(1);
 	}
@@ -706,7 +727,7 @@ void main_menu::select_data_file()
 	config::external_data_file = filename.toStdString();
 
 	//Automatically load Soul Doll data when switching
-	if((main_menu::gbe_plus != NULL) && (config::gb_type == SYS_GBA) && (config::sio_device == SIO_SOUL_DOLL_ADAPTER))
+	if((main_menu::gbe_plus != nullptr) && (config::gb_type == SYS_GBA) && (config::sio_device == SIO_SOUL_DOLL_ADAPTER))
 	{
 		gbe_plus->get_core_data(2);
 	}
@@ -718,7 +739,7 @@ void main_menu::select_data_file()
 void main_menu::quit()
 {
 	//Close the core
-	if(main_menu::gbe_plus != NULL) 
+	if(main_menu::gbe_plus != nullptr) 
 	{
 		main_menu::gbe_plus->shutdown();
 		main_menu::gbe_plus->core_emu::~core_emu();
@@ -1066,7 +1087,7 @@ void main_menu::boot_game()
 		if(config::use_opengl) { hw_screen->resize((base_width * config::scaling_factor), (base_height * config::scaling_factor)); }
 		else { sw_screen->resize((base_width * config::scaling_factor), (base_height * config::scaling_factor)); }
 
-		if(qt_gui::screen != NULL) { delete qt_gui::screen; }
+		if(qt_gui::screen != nullptr) { delete qt_gui::screen; }
 		qt_gui::screen = new QImage(base_width, base_height, QImage::Format_ARGB32);
 
 		//Enable debugging menu
@@ -1121,7 +1142,7 @@ void main_menu::boot_game()
 /****** Updates the main window ******/
 void main_menu::paintEvent(QPaintEvent* event)
 {
-	if(qt_gui::screen != NULL)
+	if(qt_gui::screen != nullptr)
 	{
 		int menu_height = menu_bar->height();
 		//Check for resize
@@ -1142,7 +1163,7 @@ void main_menu::paintEvent(QPaintEvent* event)
 			base_width = config::sys_width;
 			base_height = config::sys_height;
 
-			if(qt_gui::screen != NULL) { delete qt_gui::screen; }
+			if(qt_gui::screen != nullptr) { delete qt_gui::screen; }
 			qt_gui::screen = new QImage(config::sys_width, config::sys_height, QImage::Format_ARGB32);
 
 			resize((base_width * config::scaling_factor), (base_height * config::scaling_factor) + menu_height);
@@ -1170,7 +1191,7 @@ void main_menu::keyPressEvent(QKeyEvent* event)
 	int sdl_key = qtkey_to_sdlkey(event->key());
 
 	//Force input processing in the core
-	if(main_menu::gbe_plus != NULL)
+	if(main_menu::gbe_plus != nullptr)
 	{
 		gbe_plus->feed_key_input(sdl_key, true);
 
@@ -1238,7 +1259,7 @@ void main_menu::keyReleaseEvent(QKeyEvent* event)
 	int sdl_key = qtkey_to_sdlkey(event->key());
 	
 	//Force input processing in the core
-	if(main_menu::gbe_plus != NULL)
+	if(main_menu::gbe_plus != nullptr)
 	{
 		gbe_plus->feed_key_input(sdl_key, false);
 	}
@@ -1248,7 +1269,7 @@ void main_menu::keyReleaseEvent(QKeyEvent* event)
 bool main_menu::eventFilter(QObject* target, QEvent* event)
 {
 	//Only process NDS touchscreen events
-	if((config::gb_type != SYS_NDS) || (main_menu::gbe_plus == NULL))
+	if((config::gb_type != SYS_NDS) || (main_menu::gbe_plus == nullptr))
 	{
 		return QWidget::eventFilter(target, event);
 	}
@@ -1383,7 +1404,7 @@ bool main_menu::eventFilter(QObject* target, QEvent* event)
 /****** Qt SLOT to pause the emulator ******/
 void main_menu::pause()
 {
-	if(main_menu::gbe_plus != NULL)
+	if(main_menu::gbe_plus != nullptr)
 	{
 		//Unpause
 		if(config::pause_emu) 
@@ -1426,7 +1447,7 @@ void main_menu::pause_emu()
 /****** Resets emulation ******/
 void main_menu::reset()
 {
-	if(main_menu::gbe_plus != NULL) 
+	if(main_menu::gbe_plus != nullptr) 
 	{
 		//When emulating the GB Memory Cartridge, let the DMG-GBC or SGB cores handle resetting
 		if((config::cart_type == DMG_GBMEM) && (config::gb_type != SYS_GBA)
@@ -1446,7 +1467,7 @@ void main_menu::reset()
 /****** Switches to fullscreen mode ******/
 void main_menu::fullscreen()
 {
-	if(main_menu::gbe_plus != NULL)
+	if(main_menu::gbe_plus != nullptr)
 	{
 		//Set fullscreen
 		if(findChild<QAction*>("fullscreen_action")->isChecked())
@@ -1476,7 +1497,7 @@ void main_menu::fullscreen()
 /****** Takes screenshot ******/
 void main_menu::screenshot()
 {
-	if(main_menu::gbe_plus != NULL)
+	if(main_menu::gbe_plus != nullptr)
 	{
 		std::string save_name = config::ss_path;
 		std::string hex_ticks = util::to_hex_str(SDL_GetTicks()).substr(2);
@@ -1581,7 +1602,7 @@ void main_menu::show_paths_settings()
 /****** Shows the debugger ******/
 void main_menu::show_debugger()
 {
-	if(main_menu::gbe_plus != NULL)
+	if(main_menu::gbe_plus != nullptr)
 	{
 		//Show DMG-GBC debugger
 		if((config::gb_type <= SYS_GBC) && (!is_sgb_core)) 
@@ -1623,7 +1644,7 @@ void main_menu::load_recent(int file_id)
 	}
 
 	//Close the core
-	if(main_menu::gbe_plus != NULL) 
+	if(main_menu::gbe_plus != nullptr) 
 	{
 		main_menu::gbe_plus->shutdown();
 		main_menu::gbe_plus->core_emu::~core_emu();
@@ -1660,8 +1681,8 @@ void main_menu::load_recent(int file_id)
 	config::render_external_hw = render_screen_hw;
 	config::sample_rate = settings->sample_rate;
 
-	if(qt_gui::screen != NULL) { delete qt_gui::screen; }
-	qt_gui::screen = NULL;
+	if(qt_gui::screen != nullptr) { delete qt_gui::screen; }
+	qt_gui::screen = nullptr;
 
 	config::no_cart = false;
 
@@ -1671,7 +1692,7 @@ void main_menu::load_recent(int file_id)
 /****** Saves a save state ******/
 void main_menu::save_state(int slot)
 {
-	if(main_menu::gbe_plus != NULL)
+	if(main_menu::gbe_plus != nullptr)
 	{
 		main_menu::gbe_plus->save_state(slot);
 
@@ -1684,7 +1705,7 @@ void main_menu::save_state(int slot)
 /****** Loads a save state ******/
 void main_menu::load_state(int slot)
 {
-	if(main_menu::gbe_plus != NULL)
+	if(main_menu::gbe_plus != nullptr)
 	{
 		main_menu::gbe_plus->load_state(slot);
 
@@ -1696,7 +1717,7 @@ void main_menu::load_state(int slot)
 /****** Starts the core's netplay features ******/
 void main_menu::start_netplay()
 {
-	if(main_menu::gbe_plus != NULL)
+	if(main_menu::gbe_plus != nullptr)
 	{
 		main_menu::gbe_plus->start_netplay();
 	}
@@ -1705,7 +1726,7 @@ void main_menu::start_netplay()
 /****** Stops the core's netplay features ******/
 void main_menu::stop_netplay()
 {
-	if(main_menu::gbe_plus != NULL)
+	if(main_menu::gbe_plus != nullptr)
 	{
 		main_menu::gbe_plus->stop_netplay();
 	}
@@ -1714,7 +1735,7 @@ void main_menu::stop_netplay()
 /****** Starts special communications (IR or SIO device) ******/
 void main_menu::start_special_comm()
 {
-	if(main_menu::gbe_plus != NULL)
+	if(main_menu::gbe_plus != nullptr)
 	{
 		//This just feeds a simulated F3 keypress to the core
 		gbe_plus->feed_key_input(SDLK_F3, true);
@@ -1759,5 +1780,5 @@ void main_menu::get_nds_ar_size(u32 &width, u32 &height, u32 &offset_x, u32 &off
 }
 
 /****** Static definitions ******/
-core_emu* main_menu::gbe_plus = NULL;
-dmg_debug* main_menu::dmg_debugger = NULL;
+core_emu* main_menu::gbe_plus = nullptr;
+dmg_debug* main_menu::dmg_debugger = nullptr;

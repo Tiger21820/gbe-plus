@@ -14,6 +14,7 @@
 #include "nds/core.h"
 #include "min/core.h"
 #include "common/config.h"
+#include "common/info.h"
 
 #include <SDL_main.h>
 
@@ -21,15 +22,25 @@ int main(int argc, char* args[])
 {
 	std::cout<<"GBE+ 1.10 [SDL]\n";
 
+	if(!gbe_info::get_hash().empty())
+	{
+		std::cout<<"Revision: " << gbe_info::get_hash() << "\n\n";
+	}
+
+	else
+	{
+		std::cout<<"Revision: N/A\n\n";
+	}
+
 	core_emu* gbe_plus = NULL;
 
 	//Start SDL from the main thread now, report specific init errors later in the core
 	SDL_Init(SDL_INIT_VIDEO);
 
 	//Grab command-line arguments
-	for(int x = 0; x++ < argc - 1;) 
+	for(int x = 1; x < argc; x++) 
 	{ 
-		std::string temp_arg = args[x]; 
+		std::string temp_arg = args[x];
 		config::cli_args.push_back(temp_arg);
 		parse_filenames();
 	}

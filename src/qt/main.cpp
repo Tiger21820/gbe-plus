@@ -9,6 +9,7 @@
 // This is main. It all begins here ;)
 
 #include "render.h"
+#include "common/info.h"
  
 #include <SDL_main.h>
 
@@ -16,15 +17,25 @@ int main(int argc, char* args[])
 {
 	std::cout<<"GBE+ 1.10 [Qt]\n";
 
+	if(!gbe_info::get_hash().empty())
+	{
+		std::cout<<"Revision: " << gbe_info::get_hash() << "\n\n";
+	}
+
+	else
+	{
+		std::cout<<"Revision: N/A\n\n";
+	}
+
 	config::use_external_interfaces = true;
 
 	QApplication::setAttribute(Qt::AA_DisableWindowContextHelpButton);
 	QApplication app(argc, args);
 
 	//Grab command-line arguments
-	for(int x = 0; x++ < argc - 1;) 
+	for(int x = 1; x < argc; x++) 
 	{ 
-		std::string temp_arg = args[x]; 
+		std::string temp_arg = args[x];
 		config::cli_args.push_back(temp_arg);
 	}
 

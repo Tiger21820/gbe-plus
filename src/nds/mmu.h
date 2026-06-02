@@ -92,8 +92,8 @@ class NTR_MMU
 
 	u8 gx_fifo_mem[4];
 	
-	//NDS7 IPC FIFO
-	struct nds7_interprocess
+	//NDS IPC FIFO
+	struct nds_interprocess
 	{
 		//MMIO registers
 		u16 sync;
@@ -103,20 +103,10 @@ class NTR_MMU
 		std::queue <u32> fifo;
 		u32 fifo_latest;
 		u32 fifo_incoming;
-	} nds7_ipc;
+	};
 
-	//NDS9 IPC FIFO
-	struct nds9_interprocess
-	{
-		//MMIO registers
-		u16 sync;
-		u16 cnt;
-
-		//IPC FIFO data
-		std::queue <u32> fifo;
-		u32 fifo_latest;
-		u32 fifo_incoming;
-	} nds9_ipc;
+	nds_interprocess nds7_ipc;
+	nds_interprocess nds9_ipc;
 
 	//NDS7 SPI Bus
 	struct nds7_spi_bus
@@ -389,6 +379,9 @@ class NTR_MMU
 		u8 raw_sad[4];
 		u8 raw_dad[4];
 		u8 raw_cnt[4];
+
+		u32 word_mask;
+		u32 addr_mask;
 	} dma[8];
 
 	//Structure to handle microphone sound capture
@@ -452,7 +445,6 @@ class NTR_MMU
 	u32 pal_b_obj_slot[4];
 
 	u32 vram_tex_slot[4];
-	u32 vram_bank_log[9][5];
 
 	bool bg_vram_bank_enable_a;
 	bool bg_vram_bank_enable_b;
@@ -577,6 +569,8 @@ class NTR_MMU
 
 	//Only the MMU and APU should communicate through this structure
 	ntr_apu_data* apu_stat;
+
+	u8 dma_reg_lut[48];
 
 	u32* nds7_pc;
 	u32* nds9_pc;

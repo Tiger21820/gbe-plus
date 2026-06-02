@@ -252,7 +252,12 @@ void NTR_MMU::reset()
 		dma[x].dest_addr_ctrl = 0;
 		dma[x].src_addr_ctrl = 0;
 		dma[x].delay = 0;
+		dma[x].word_mask = (x < 4) ? 0x1FFFFF : 0x3FFF;
+		dma[x].addr_mask = (x < 4) ? 0xFFFFFFFF : 0x7FFFFFFF;
 	}
+
+	//Special case word mask for NDS7 DMA3
+	dma[7].word_mask = 0xFFFF;
 
 	//Setup NDS Sound Capture info
 	for(int x = 0; x < 2; x++)
@@ -285,7 +290,7 @@ void NTR_MMU::reset()
 	nds_aux_spi.cnt = 0;
 	nds_aux_spi.data = 0;
 	nds_aux_spi.transfer_count = 0;
-	nds_aux_spi.eeprom_stat = 0x0;
+	nds_aux_spi.eeprom_stat = 0xF0;
 	nds_aux_spi.backup_cmd = 0;
 	nds_aux_spi.backup_cmd_ready = true;
 	nds_aux_spi.state = 0;
@@ -381,18 +386,14 @@ void NTR_MMU::reset()
 	bg_vram_bank_enable_a = false;
 	bg_vram_bank_enable_b = false;
 
-	for(u32 y = 0; y < 4; y++)
-	{
-		for(u32 x = 0; x < 9; x++)
-		{
-			vram_bank_log[x][y] = 0;
-		}
-	}
-
 	access_mode = 1;
 	wram_mode = 3;
 	rumble_state = 0;
 	do_save = false;
+
+	//Small LUT for quickly getting DMAx register IDs.
+	//Each DMA register set is 12-bytes long, so this avoids using division frequently to get the ID
+	for(u32 x = 0; x < 48; x++) { dma_reg_lut[x] = x / 12; }
 
 	//Advanced debugging
 	#ifdef GBE_DEBUG
@@ -972,19 +973,19 @@ u8 NTR_MMU::read_u8(u32 address)
 	//Check for DMA0SAD
 	else if((address & ~0x3) == NDS_DMA0SAD)
 	{
-		u8 addr_shift = (address & 0x3) << 3;
+		u8 addr_shift = (address & 0x3);
 		
-		if(access_mode) { return ((dma[0].start_address >> addr_shift) & 0xFF); }
-		else { return ((dma[4].start_address >> addr_shift) & 0xFF); }
+		if(access_mode) { return ((dma[0].raw_sad[addr_shift]) & 0xFF); }
+		else { return ((dma[4].raw_sad[addr_shift]) & 0xFF); }
 	}
 
 	//Check for DMA0DAD
 	else if((address & ~0x3) == NDS_DMA0DAD)
 	{
-		u8 addr_shift = (address & 0x3) << 3;
+		u8 addr_shift = (address & 0x3);
 		
-		if(access_mode) { return ((dma[0].destination_address >> addr_shift) & 0xFF); }
-		else { return ((dma[4].destination_address >> addr_shift) & 0xFF); }
+		if(access_mode) { return ((dma[0].raw_dad[addr_shift]) & 0xFF); }
+		else { return ((dma[4].raw_dad[addr_shift]) & 0xFF); }
 	}
 		
 	//Check for DMA1CNT
@@ -999,19 +1000,19 @@ u8 NTR_MMU::read_u8(u32 address)
 	//Check for DMA1SAD
 	else if((address & ~0x3) == NDS_DMA1SAD)
 	{
-		u8 addr_shift = (address & 0x3) << 3;
+		u8 addr_shift = (address & 0x3);
 		
-		if(access_mode) { return ((dma[1].start_address >> addr_shift) & 0xFF); }
-		else { return ((dma[5].start_address >> addr_shift) & 0xFF); }
+		if(access_mode) { return ((dma[1].raw_sad[addr_shift]) & 0xFF); }
+		else { return ((dma[5].raw_sad[addr_shift]) & 0xFF); }
 	}
 
 	//Check for DMA1DAD
 	else if((address & ~0x3) == NDS_DMA1DAD)
 	{
-		u8 addr_shift = (address & 0x3) << 3;
+		u8 addr_shift = (address & 0x3);
 		
-		if(access_mode) { return ((dma[1].destination_address >> addr_shift) & 0xFF); }
-		else { return ((dma[5].destination_address >> addr_shift) & 0xFF); }
+		if(access_mode) { return ((dma[1].raw_dad[addr_shift]) & 0xFF); }
+		else { return ((dma[5].raw_dad[addr_shift]) & 0xFF); }
 	}
 
 	//Check for DMA2CNT
@@ -1026,19 +1027,19 @@ u8 NTR_MMU::read_u8(u32 address)
 	//Check for DMA2SAD
 	else if((address & ~0x3) == NDS_DMA2SAD)
 	{
-		u8 addr_shift = (address & 0x3) << 3;
+		u8 addr_shift = (address & 0x3);
 		
-		if(access_mode) { return ((dma[2].start_address >> addr_shift) & 0xFF); }
-		else { return ((dma[6].start_address >> addr_shift) & 0xFF); }
+		if(access_mode) { return ((dma[2].raw_sad[addr_shift]) & 0xFF); }
+		else { return ((dma[6].raw_sad[addr_shift]) & 0xFF); }
 	}
 
 	//Check for DMA2DAD
 	else if((address & ~0x3) == NDS_DMA2DAD)
 	{
-		u8 addr_shift = (address & 0x3) << 3;
+		u8 addr_shift = (address & 0x3);
 		
-		if(access_mode) { return ((dma[2].destination_address >> addr_shift) & 0xFF); }
-		else { return ((dma[6].destination_address >> addr_shift) & 0xFF); }
+		if(access_mode) { return ((dma[2].raw_dad[addr_shift]) & 0xFF); }
+		else { return ((dma[6].raw_dad[addr_shift]) & 0xFF); }
 	}
 
 	//Check for DMA3CNT
@@ -1053,19 +1054,19 @@ u8 NTR_MMU::read_u8(u32 address)
 	//Check for DMA3SAD
 	else if((address & ~0x3) == NDS_DMA3SAD)
 	{
-		u8 addr_shift = (address & 0x3) << 3;
+		u8 addr_shift = (address & 0x3);
 		
-		if(access_mode) { return ((dma[3].start_address >> addr_shift) & 0xFF); }
-		else { return ((dma[7].start_address >> addr_shift) & 0xFF); }
+		if(access_mode) { return ((dma[3].raw_sad[addr_shift]) & 0xFF); }
+		else { return ((dma[7].raw_sad[addr_shift]) & 0xFF); }
 	}
 
 	//Check for DMA3DAD
 	else if((address & ~0x3) == NDS_DMA3DAD)
 	{
-		u8 addr_shift = (address & 0x3) << 3;
+		u8 addr_shift = (address & 0x3);
 		
-		if(access_mode) { return ((dma[3].destination_address >> addr_shift) & 0xFF); }
-		else { return ((dma[7].destination_address >> addr_shift) & 0xFF); }
+		if(access_mode) { return ((dma[3].raw_dad[addr_shift]) & 0xFF); }
+		else { return ((dma[7].raw_dad[addr_shift]) & 0xFF); }
 	}
 
 	//Check for DISP3DCNT
@@ -1930,541 +1931,232 @@ void NTR_MMU::write_u8(u32 address, u8 value)
 			lcd_stat->lcd_mode = (lcd_stat->lcd_clock < 4089600) ? 0 : 2;
 			break;
 
-		//BG0 Control A
+		//BG0 - BG3 Control A
 		case NDS_BG0CNT_A:
 		case NDS_BG0CNT_A+1:
-			{
-				memory_map[address] = value;
-				lcd_stat->bg_control_a[0] = (memory_map[NDS_BG0CNT_A+1] << 8) | memory_map[NDS_BG0CNT_A];
-
-				//Determine BG Priority
-				lcd_stat->bg_priority_a[0] = lcd_stat->bg_control_a[0] & 0x3;
-			
-				//Calculate tile data and tile map addresses
-				u32 char_base = ((lcd_stat->display_control_a >> 24) & 0x7);
-				u32 screen_base = ((lcd_stat->display_control_a >> 27) & 0x7);
-
-				u32 char_block = ((lcd_stat->bg_control_a[0] >> 2) & 0xF);
-				u32 screen_block = ((lcd_stat->bg_control_a[0] >> 8) & 0x1F);
-
-				lcd_stat->bg_base_tile_addr_a[0] = (char_base * 0x10000) + (char_block * 0x4000);
-				lcd_stat->bg_base_map_addr_a[0] = (screen_base * 0x10000) + (screen_block * 0x800);
-
-				//Bit-depth
-				lcd_stat->bg_depth_a[0] = (lcd_stat->bg_control_a[0] & 0x80) ? 1 : 0;
-
-				//Screen size
-				lcd_stat->bg_size_a[0] = (lcd_stat->bg_control_a[0] >> 14) & 0x3;
-
-				switch(lcd_stat->bg_size_a[0])
-				{
-					case 0x0: lcd_stat->text_width_a[0] = 255; lcd_stat->text_height_a[0] = 255; break;
-					case 0x1: lcd_stat->text_width_a[0] = 511; lcd_stat->text_height_a[0] = 255; break;
-					case 0x2: lcd_stat->text_width_a[0] = 255; lcd_stat->text_height_a[0] = 511; break;
-					case 0x3: lcd_stat->text_width_a[0] = 511; lcd_stat->text_height_a[0] = 511; break;
-				}
-			}
-
-			break;
-
-		//BG0 Control B
-		case NDS_BG0CNT_B:
-		case NDS_BG0CNT_B+1:
-			{
-				memory_map[address] = value;
-				lcd_stat->bg_control_b[0] = (memory_map[NDS_BG0CNT_B+1] << 8) | memory_map[NDS_BG0CNT_B];
-
-				//Determine BG Priority
-				lcd_stat->bg_priority_b[0] = lcd_stat->bg_control_b[0] & 0x3;
-
-				u32 char_block = ((lcd_stat->bg_control_b[0] >> 2) & 0xF);
-				u32 screen_block = ((lcd_stat->bg_control_b[0] >> 8) & 0x1F);
-
-				lcd_stat->bg_base_tile_addr_b[0] = (char_block * 0x4000);
-				lcd_stat->bg_base_map_addr_b[0] = (screen_block * 0x800);
-
-				//Bit-depth
-				lcd_stat->bg_depth_b[0] = (lcd_stat->bg_control_b[0] & 0x80) ? 1 : 0;
-
-				//Screen size
-				lcd_stat->bg_size_b[0] = (lcd_stat->bg_control_b[0] >> 14) & 0x3;
-
-				switch(lcd_stat->bg_size_b[0])
-				{
-					case 0x0: lcd_stat->text_width_b[0] = 255; lcd_stat->text_height_b[0] = 255; break;
-					case 0x1: lcd_stat->text_width_b[0] = 511; lcd_stat->text_height_b[0] = 255; break;
-					case 0x2: lcd_stat->text_width_b[0] = 255; lcd_stat->text_height_b[0] = 511; break;
-					case 0x3: lcd_stat->text_width_b[0] = 511; lcd_stat->text_height_b[0] = 511; break;
-				}
-			}
-
-			break;
-
-		//BG1 Control A
 		case NDS_BG1CNT_A:
 		case NDS_BG1CNT_A+1:
-			{
-				memory_map[address] = value;
-				lcd_stat->bg_control_a[1] = (memory_map[NDS_BG1CNT_A+1] << 8) | memory_map[NDS_BG1CNT_A];
-
-				//Determine BG Priority
-				lcd_stat->bg_priority_a[1] = lcd_stat->bg_control_a[1] & 0x3;
-			
-				//Calculate tile data and tile map addresses
-				u32 char_base = ((lcd_stat->display_control_a >> 24) & 0x7);
-				u32 screen_base = ((lcd_stat->display_control_a >> 27) & 0x7);
-
-				u32 char_block = ((lcd_stat->bg_control_a[1] >> 2) & 0xF);
-				u32 screen_block = ((lcd_stat->bg_control_a[1] >> 8) & 0x1F);
-
-				lcd_stat->bg_base_tile_addr_a[1] = (char_base * 0x10000) + (char_block * 0x4000);
-				lcd_stat->bg_base_map_addr_a[1] = (screen_base * 0x10000) + (screen_block * 0x800);
-
-				//Bit-depth
-				lcd_stat->bg_depth_a[1] = (lcd_stat->bg_control_a[1] & 0x80) ? 1 : 0;
-
-				//Screen size
-				lcd_stat->bg_size_a[1] = (lcd_stat->bg_control_a[1] >> 14) & 0x3;
-
-				switch(lcd_stat->bg_size_a[1])
-				{
-					case 0x0: lcd_stat->text_width_a[1] = 255; lcd_stat->text_height_a[1] = 255; break;
-					case 0x1: lcd_stat->text_width_a[1] = 511; lcd_stat->text_height_a[1] = 255; break;
-					case 0x2: lcd_stat->text_width_a[1] = 255; lcd_stat->text_height_a[1] = 511; break;
-					case 0x3: lcd_stat->text_width_a[1] = 511; lcd_stat->text_height_a[1] = 511; break;
-				}
-			}
-
-			break;
-
-		//BG1 Control B
-		case NDS_BG1CNT_B:
-		case NDS_BG1CNT_B+1:
-			{
-				memory_map[address] = value;
-				lcd_stat->bg_control_b[1] = (memory_map[NDS_BG1CNT_B+1] << 8) | memory_map[NDS_BG1CNT_B];
-
-				//Determine BG Priority
-				lcd_stat->bg_priority_b[1] = lcd_stat->bg_control_b[1] & 0x3;
-			
-				//Calculate tile data and tile map addresses
-				u32 char_base = ((lcd_stat->display_control_b >> 24) & 0x7);
-				u32 screen_base = ((lcd_stat->display_control_b >> 27) & 0x7);
-
-				u32 char_block = ((lcd_stat->bg_control_b[1] >> 2) & 0xF);
-				u32 screen_block = ((lcd_stat->bg_control_b[1] >> 8) & 0x1F);
-
-				lcd_stat->bg_base_tile_addr_b[1] = (char_block * 0x4000);
-				lcd_stat->bg_base_map_addr_b[1] = (screen_block * 0x800);
-
-				//Bit-depth
-				lcd_stat->bg_depth_b[1] = (lcd_stat->bg_control_b[1] & 0x80) ? 1 : 0;
-
-				//Screen size
-				lcd_stat->bg_size_b[1] = (lcd_stat->bg_control_b[1] >> 14) & 0x3;
-
-				switch(lcd_stat->bg_size_b[1])
-				{
-					case 0x0: lcd_stat->text_width_b[1] = 255; lcd_stat->text_height_b[1] = 255; break;
-					case 0x1: lcd_stat->text_width_b[1] = 511; lcd_stat->text_height_b[1] = 255; break;
-					case 0x2: lcd_stat->text_width_b[1] = 255; lcd_stat->text_height_b[1] = 511; break;
-					case 0x3: lcd_stat->text_width_b[1] = 511; lcd_stat->text_height_b[1] = 511; break;
-				}
-			}
-
-			break;
-
-		//BG2 Control A
 		case NDS_BG2CNT_A:
 		case NDS_BG2CNT_A+1:
-			{
-				memory_map[address] = value;
-				lcd_stat->bg_control_a[2] = (memory_map[NDS_BG2CNT_A+1] << 8) | memory_map[NDS_BG2CNT_A];
-
-				//Determine BG Priority
-				lcd_stat->bg_priority_a[2] = lcd_stat->bg_control_a[2] & 0x3;
-			
-				//Calculate tile data and tile map addresses
-				u32 char_base = ((lcd_stat->display_control_a >> 24) & 0x7);
-				u32 screen_base = ((lcd_stat->display_control_a >> 27) & 0x7);
-
-				u32 char_block = ((lcd_stat->bg_control_a[2] >> 2) & 0xF);
-				u32 screen_block = ((lcd_stat->bg_control_a[2] >> 8) & 0x1F);
-
-				lcd_stat->bg_base_tile_addr_a[2] = (char_base * 0x10000) + (char_block * 0x4000);
-				lcd_stat->bg_base_map_addr_a[2] = (screen_base * 0x10000) + (screen_block * 0x800);
-				lcd_stat->bg_bitmap_base_addr_a[0] = 0x6000000 + (screen_block * 0x4000);
-
-				//Bit-depth
-				lcd_stat->bg_depth_a[2] = (lcd_stat->bg_control_a[2] & 0x80) ? 1 : 0;
-
-				//Affine overflow
-				lcd_stat->bg_affine_a[0].overflow = (lcd_stat->bg_control_a[2] & 0x2000) ? true : false;
-
-				//Screen size
-				lcd_stat->bg_size_a[2] = (lcd_stat->bg_control_a[2] >> 14) & 0x3;
-
-				switch(lcd_stat->bg_size_a[2])
-				{
-					case 0x0: lcd_stat->text_width_a[2] = 255; lcd_stat->text_height_a[2] = 255; break;
-					case 0x1: lcd_stat->text_width_a[2] = 511; lcd_stat->text_height_a[2] = 255; break;
-					case 0x2: lcd_stat->text_width_a[2] = 255; lcd_stat->text_height_a[2] = 511; break;
-					case 0x3: lcd_stat->text_width_a[2] = 511; lcd_stat->text_height_a[2] = 511; break;
-				}
-			}
-
-			break;
-
-		//BG2 Control B
-		case NDS_BG2CNT_B:
-		case NDS_BG2CNT_B+1:
-			{
-				memory_map[address] = value;
-				lcd_stat->bg_control_b[2] = (memory_map[NDS_BG2CNT_B+1] << 8) | memory_map[NDS_BG2CNT_B];
-
-				//Determine BG Priority
-				lcd_stat->bg_priority_b[2] = lcd_stat->bg_control_b[2] & 0x3;
-			
-				//Calculate tile data and tile map addresses
-				u32 char_base = ((lcd_stat->display_control_b >> 24) & 0x7);
-				u32 screen_base = ((lcd_stat->display_control_b >> 27) & 0x7);
-
-				u32 char_block = ((lcd_stat->bg_control_b[2] >> 2) & 0xF);
-				u32 screen_block = ((lcd_stat->bg_control_b[2] >> 8) & 0x1F);
-
-				lcd_stat->bg_base_tile_addr_b[2] = (char_block * 0x4000);
-				lcd_stat->bg_base_map_addr_b[2] = (screen_block * 0x800);
-				lcd_stat->bg_bitmap_base_addr_b[0] = 0x6200000 + (screen_block * 0x4000);
-
-				//Bit-depth
-				lcd_stat->bg_depth_b[2] = (lcd_stat->bg_control_b[2] & 0x80) ? 1 : 0;
-
-				//Affine overflow
-				lcd_stat->bg_affine_b[0].overflow = (lcd_stat->bg_control_b[2] & 0x2000) ? true : false;
-
-				//Screen size
-				lcd_stat->bg_size_b[2] = (lcd_stat->bg_control_b[2] >> 14) & 0x3;
-
-				switch(lcd_stat->bg_size_b[2])
-				{
-					case 0x0: lcd_stat->text_width_b[2] = 255; lcd_stat->text_height_b[2] = 255; break;
-					case 0x1: lcd_stat->text_width_b[2] = 511; lcd_stat->text_height_b[2] = 255; break;
-					case 0x2: lcd_stat->text_width_b[2] = 255; lcd_stat->text_height_b[2] = 511; break;
-					case 0x3: lcd_stat->text_width_b[2] = 511; lcd_stat->text_height_b[2] = 511; break;
-				}
-			}
-
-			break;
-
-		//BG3 Control A
 		case NDS_BG3CNT_A:
 		case NDS_BG3CNT_A+1:
 			{
+				u8 reg_id = (address - NDS_BG0CNT_A) >> 1;
+				u32 reg_addr = (address & ~0x01);
+
 				memory_map[address] = value;
-				lcd_stat->bg_control_a[3] = (memory_map[NDS_BG3CNT_A+1] << 8) | memory_map[NDS_BG3CNT_A];
+				lcd_stat->bg_control_a[reg_id] = (memory_map[reg_addr+1] << 8) | memory_map[reg_addr];
 
 				//Determine BG Priority
-				lcd_stat->bg_priority_a[3] = lcd_stat->bg_control_a[3] & 0x3;
+				lcd_stat->bg_priority_a[reg_id] = lcd_stat->bg_control_a[reg_id] & 0x3;
 			
 				//Calculate tile data and tile map addresses
 				u32 char_base = ((lcd_stat->display_control_a >> 24) & 0x7);
 				u32 screen_base = ((lcd_stat->display_control_a >> 27) & 0x7);
 
-				u32 char_block = ((lcd_stat->bg_control_a[3] >> 2) & 0xF);
-				u32 screen_block = ((lcd_stat->bg_control_a[3] >> 8) & 0x1F);
+				u32 char_block = ((lcd_stat->bg_control_a[reg_id] >> 2) & 0xF);
+				u32 screen_block = ((lcd_stat->bg_control_a[reg_id] >> 8) & 0x1F);
 
-				lcd_stat->bg_base_tile_addr_a[3] = (char_base * 0x10000) + (char_block * 0x4000);
-				lcd_stat->bg_base_map_addr_a[3] = (screen_base * 0x10000) + (screen_block * 0x800);
-				lcd_stat->bg_bitmap_base_addr_a[1] = 0x6000000 + (screen_block * 0x4000);
+				lcd_stat->bg_base_tile_addr_a[reg_id] = (char_base * 0x10000) + (char_block * 0x4000);
+				lcd_stat->bg_base_map_addr_a[reg_id] = (screen_base * 0x10000) + (screen_block * 0x800);
 
 				//Bit-depth
-				lcd_stat->bg_depth_a[3] = (lcd_stat->bg_control_a[3] & 0x80) ? 1 : 0;
-
-				//Affine overflow
-				lcd_stat->bg_affine_a[1].overflow = (lcd_stat->bg_control_a[3] & 0x2000) ? true : false;
+				lcd_stat->bg_depth_a[reg_id] = (lcd_stat->bg_control_a[reg_id] & 0x80) ? 1 : 0;
 
 				//Screen size
-				lcd_stat->bg_size_a[3] = (lcd_stat->bg_control_a[3] >> 14) & 0x3;
+				lcd_stat->bg_size_a[reg_id] = (lcd_stat->bg_control_a[reg_id] >> 14) & 0x3;
 
-				switch(lcd_stat->bg_size_a[3])
+				switch(lcd_stat->bg_size_a[reg_id])
 				{
-					case 0x0: lcd_stat->text_width_a[3] = 255; lcd_stat->text_height_a[3] = 255; break;
-					case 0x1: lcd_stat->text_width_a[3] = 511; lcd_stat->text_height_a[3] = 255; break;
-					case 0x2: lcd_stat->text_width_a[3] = 255; lcd_stat->text_height_a[3] = 511; break;
-					case 0x3: lcd_stat->text_width_a[3] = 511; lcd_stat->text_height_a[3] = 511; break;
+					case 0x0: lcd_stat->text_width_a[reg_id] = 255; lcd_stat->text_height_a[reg_id] = 255; break;
+					case 0x1: lcd_stat->text_width_a[reg_id] = 511; lcd_stat->text_height_a[reg_id] = 255; break;
+					case 0x2: lcd_stat->text_width_a[reg_id] = 255; lcd_stat->text_height_a[reg_id] = 511; break;
+					case 0x3: lcd_stat->text_width_a[reg_id] = 511; lcd_stat->text_height_a[reg_id] = 511; break;
+				}
+
+				if(reg_id >= 2)
+				{
+					lcd_stat->bg_bitmap_base_addr_a[reg_id - 2] = 0x6000000 + (screen_block * 0x4000);
+
+					//Affine overflow
+					lcd_stat->bg_affine_a[reg_id - 2].overflow = (lcd_stat->bg_control_a[reg_id] & 0x2000) ? true : false;
 				}
 			}
 
 			break;
 
-		//BG3 Control B
+		//BG0 - BG3 Control B
+		case NDS_BG0CNT_B:
+		case NDS_BG0CNT_B+1:
+		case NDS_BG1CNT_B:
+		case NDS_BG1CNT_B+1:
+		case NDS_BG2CNT_B:
+		case NDS_BG2CNT_B+1:
 		case NDS_BG3CNT_B:
 		case NDS_BG3CNT_B+1:
 			{
+				u8 reg_id = (address - NDS_BG0CNT_B) >> 1;
+				u32 reg_addr = (address & ~0x01);
+
 				memory_map[address] = value;
-				lcd_stat->bg_control_b[3] = (memory_map[NDS_BG3CNT_B+1] << 8) | memory_map[NDS_BG3CNT_B];
+				lcd_stat->bg_control_b[reg_id] = (memory_map[reg_addr+1] << 8) | memory_map[reg_addr];
 
 				//Determine BG Priority
-				lcd_stat->bg_priority_b[3] = lcd_stat->bg_control_b[3] & 0x3;
-			
+				lcd_stat->bg_priority_b[reg_id] = lcd_stat->bg_control_b[reg_id] & 0x3;
+
 				//Calculate tile data and tile map addresses
-				u32 char_base = ((lcd_stat->display_control_b >> 24) & 0x7);
-				u32 screen_base = ((lcd_stat->display_control_b >> 27) & 0x7);
+				u32 char_block = ((lcd_stat->bg_control_b[reg_id] >> 2) & 0xF);
+				u32 screen_block = ((lcd_stat->bg_control_b[reg_id] >> 8) & 0x1F);
 
-				u32 char_block = ((lcd_stat->bg_control_b[3] >> 2) & 0xF);
-				u32 screen_block = ((lcd_stat->bg_control_b[3] >> 8) & 0x1F);
-
-				lcd_stat->bg_base_tile_addr_b[3] = (char_block * 0x4000);
-				lcd_stat->bg_base_map_addr_b[3] = (screen_block * 0x800);
-				lcd_stat->bg_bitmap_base_addr_b[1] = 0x6200000 + (screen_block * 0x4000);
+				lcd_stat->bg_base_tile_addr_b[reg_id] = (char_block * 0x4000);
+				lcd_stat->bg_base_map_addr_b[reg_id] = (screen_block * 0x800);
 
 				//Bit-depth
-				lcd_stat->bg_depth_b[3] = (lcd_stat->bg_control_b[3] & 0x80) ? 1 : 0;
-
-				//Affine overflow
-				lcd_stat->bg_affine_b[1].overflow = (lcd_stat->bg_control_b[3] & 0x2000) ? true : false;
+				lcd_stat->bg_depth_b[reg_id] = (lcd_stat->bg_control_b[reg_id] & 0x80) ? 1 : 0;
 
 				//Screen size
-				lcd_stat->bg_size_b[3] = (lcd_stat->bg_control_b[3] >> 14) & 0x3;
+				lcd_stat->bg_size_b[reg_id] = (lcd_stat->bg_control_b[reg_id] >> 14) & 0x3;
 
-				switch(lcd_stat->bg_size_b[3])
+				switch(lcd_stat->bg_size_b[reg_id])
 				{
-					case 0x0: lcd_stat->text_width_b[3] = 255; lcd_stat->text_height_b[3] = 255; break;
-					case 0x1: lcd_stat->text_width_b[3] = 511; lcd_stat->text_height_b[3] = 255; break;
-					case 0x2: lcd_stat->text_width_b[3] = 255; lcd_stat->text_height_b[3] = 511; break;
-					case 0x3: lcd_stat->text_width_b[3] = 511; lcd_stat->text_height_b[3] = 511; break;
+					case 0x0: lcd_stat->text_width_b[reg_id] = 255; lcd_stat->text_height_b[reg_id] = 255; break;
+					case 0x1: lcd_stat->text_width_b[reg_id] = 511; lcd_stat->text_height_b[reg_id] = 255; break;
+					case 0x2: lcd_stat->text_width_b[reg_id] = 255; lcd_stat->text_height_b[reg_id] = 511; break;
+					case 0x3: lcd_stat->text_width_b[reg_id] = 511; lcd_stat->text_height_b[reg_id] = 511; break;
+				}
+
+				if(reg_id >= 2)
+				{
+					lcd_stat->bg_bitmap_base_addr_b[reg_id - 2] = 0x6200000 + (screen_block * 0x4000);
+
+					//Affine overflow
+					lcd_stat->bg_affine_b[reg_id - 2].overflow = (lcd_stat->bg_control_b[reg_id] & 0x2000) ? true : false;
 				}
 			}
 
 			break;
 
-		//BG0 Horizontal Offset A
+		//BG0 - BG3 Horizontal Offset A
 		case NDS_BG0HOFS_A:
 		case NDS_BG0HOFS_A+1:
-			memory_map[address] = value;
-			lcd_stat->bg_offset_x_a[0] = ((memory_map[NDS_BG0HOFS_A+1] << 8) | memory_map[NDS_BG0HOFS_A]) & 0x1FF;
-			break;
-
-		//BG0 Horizontal Offset B
-		case NDS_BG0HOFS_B:
-		case NDS_BG0HOFS_B+1:
-			memory_map[address] = value;
-			lcd_stat->bg_offset_x_b[0] = ((memory_map[NDS_BG0HOFS_B+1] << 8) | memory_map[NDS_BG0HOFS_B]) & 0x1FF;
-			break;
-
-		//BG0 Vertical Offset A
-		case NDS_BG0VOFS_A:
-		case NDS_BG0VOFS_A+1:
-			memory_map[address] = value;
-			lcd_stat->bg_offset_y_a[0] = ((memory_map[NDS_BG0VOFS_A+1] << 8) | memory_map[NDS_BG0VOFS_A]) & 0x1FF;
-			break;
-
-		//BG0 Vertical Offset B
-		case NDS_BG0VOFS_B:
-		case NDS_BG0VOFS_B+1:
-			memory_map[address] = value;
-			lcd_stat->bg_offset_y_b[0] = ((memory_map[NDS_BG0VOFS_B+1] << 8) | memory_map[NDS_BG0VOFS_B]) & 0x1FF;
-			break;
-
-		//BG1 Horizontal Offset A
 		case NDS_BG1HOFS_A:
 		case NDS_BG1HOFS_A+1:
-			memory_map[address] = value;
-			lcd_stat->bg_offset_x_a[1] = ((memory_map[NDS_BG1HOFS_A+1] << 8) | memory_map[NDS_BG1HOFS_A]) & 0x1FF;
-			break;
-
-		//BG1 Horizontal Offset B
-		case NDS_BG1HOFS_B:
-		case NDS_BG1HOFS_B+1:
-			memory_map[address] = value;
-			lcd_stat->bg_offset_x_b[1] = ((memory_map[NDS_BG1HOFS_B+1] << 8) | memory_map[NDS_BG1HOFS_B]) & 0x1FF;
-			break;
-
-		//BG1 Vertical Offset A
-		case NDS_BG1VOFS_A:
-		case NDS_BG1VOFS_A+1:
-			memory_map[address] = value;
-			lcd_stat->bg_offset_y_a[1] = ((memory_map[NDS_BG1VOFS_A+1] << 8) | memory_map[NDS_BG1VOFS_A]) & 0x1FF;
-			break;
-
-		//BG1 Vertical Offset B
-		case NDS_BG1VOFS_B:
-		case NDS_BG1VOFS_B+1:
-			memory_map[address] = value;
-			lcd_stat->bg_offset_y_b[1] = ((memory_map[NDS_BG1VOFS_B+1] << 8) | memory_map[NDS_BG1VOFS_B]) & 0x1FF;
-			break;
-
-		//BG2 Horizontal Offset A
 		case NDS_BG2HOFS_A:
 		case NDS_BG2HOFS_A+1:
-			memory_map[address] = value;
-			lcd_stat->bg_offset_x_a[2] = ((memory_map[NDS_BG2HOFS_A+1] << 8) | memory_map[NDS_BG2HOFS_A]) & 0x1FF;
-			break;
-
-		//BG2 Horizontal Offset B
-		case NDS_BG2HOFS_B:
-		case NDS_BG2HOFS_B+1:
-			memory_map[address] = value;
-			lcd_stat->bg_offset_x_b[2] = ((memory_map[NDS_BG2HOFS_B+1] << 8) | memory_map[NDS_BG2HOFS_B]) & 0x1FF;
-			break;
-
-		//BG2 Vertical Offset A
-		case NDS_BG2VOFS_A:
-		case NDS_BG2VOFS_A+1:
-			memory_map[address] = value;
-			lcd_stat->bg_offset_y_a[2] = ((memory_map[NDS_BG2VOFS_A+1] << 8) | memory_map[NDS_BG2VOFS_A]) & 0x1FF;
-			break;
-
-		//BG2 Vertical Offset B
-		case NDS_BG2VOFS_B:
-		case NDS_BG2VOFS_B+1:
-			memory_map[address] = value;
-			lcd_stat->bg_offset_y_b[2] = ((memory_map[NDS_BG2VOFS_B+1] << 8) | memory_map[NDS_BG2VOFS_B]) & 0x1FF;
-			break;
-
-		//BG3 Horizontal Offset A
 		case NDS_BG3HOFS_A:
 		case NDS_BG3HOFS_A+1:
-			memory_map[address] = value;
-			lcd_stat->bg_offset_x_a[3] = ((memory_map[NDS_BG3HOFS_A+1] << 8) | memory_map[NDS_BG3HOFS_A]) & 0x1FF;
+			{
+				u8 reg_id = (address - NDS_BG0HOFS_A) >> 2;
+				u32 reg_addr = (address & ~0x01);
+
+				memory_map[address] = value;
+				lcd_stat->bg_offset_x_a[reg_id] = ((memory_map[reg_addr+1] << 8) | memory_map[reg_addr]) & 0x1FF;
+			}
+
 			break;
 
-		//BG3 Horizontal Offset B
+		//BG0 - BG3 Horizontal Offset B
+		case NDS_BG0HOFS_B:
+		case NDS_BG0HOFS_B+1:
+		case NDS_BG1HOFS_B:
+		case NDS_BG1HOFS_B+1:
+		case NDS_BG2HOFS_B:
+		case NDS_BG2HOFS_B+1:
 		case NDS_BG3HOFS_B:
 		case NDS_BG3HOFS_B+1:
-			memory_map[address] = value;
-			lcd_stat->bg_offset_x_b[3] = ((memory_map[NDS_BG3HOFS_B+1] << 8) | memory_map[NDS_BG3HOFS_B]) & 0x1FF;
+			{
+				u8 reg_id = (address - NDS_BG0HOFS_B) >> 2;
+				u32 reg_addr = (address & ~0x01);
+
+				memory_map[address] = value;
+				lcd_stat->bg_offset_x_b[reg_id] = ((memory_map[reg_addr+1] << 8) | memory_map[reg_addr]) & 0x1FF;
+			}
+
 			break;
 
-		//BG3 Vertical Offset A
+		//BG0 - BG3 Vertical Offset A
+		case NDS_BG0VOFS_A:
+		case NDS_BG0VOFS_A+1:
+		case NDS_BG1VOFS_A:
+		case NDS_BG1VOFS_A+1:
+		case NDS_BG2VOFS_A:
+		case NDS_BG2VOFS_A+1:
 		case NDS_BG3VOFS_A:
 		case NDS_BG3VOFS_A+1:
-			memory_map[address] = value;
-			lcd_stat->bg_offset_y_a[3] = ((memory_map[NDS_BG3VOFS_A+1] << 8) | memory_map[NDS_BG3VOFS_A]) & 0x1FF;
+			{
+				u8 reg_id = (address - NDS_BG0VOFS_A) >> 2;
+				u32 reg_addr = (address & ~0x01);
+
+				memory_map[address] = value;
+				lcd_stat->bg_offset_y_a[reg_id] = ((memory_map[reg_addr+1] << 8) | memory_map[reg_addr]) & 0x1FF;
+			}
+
 			break;
 
-		//BG3 Vertical Offset B
+		//BG0 - BG3 Vertical Offset B
+		case NDS_BG0VOFS_B:
+		case NDS_BG0VOFS_B+1:
+		case NDS_BG1VOFS_B:
+		case NDS_BG1VOFS_B+1:
+		case NDS_BG2VOFS_B:
+		case NDS_BG2VOFS_B+1:
 		case NDS_BG3VOFS_B:
 		case NDS_BG3VOFS_B+1:
-			memory_map[address] = value;
-			lcd_stat->bg_offset_y_b[3] = ((memory_map[NDS_BG3VOFS_B+1] << 8) | memory_map[NDS_BG3VOFS_B]) & 0x1FF;
+			{
+				u8 reg_id = (address - NDS_BG0VOFS_B) >> 2;
+				u32 reg_addr = (address & ~0x01);
+
+				memory_map[address] = value;
+				lcd_stat->bg_offset_y_b[reg_id] = ((memory_map[reg_addr+1] << 8) | memory_map[reg_addr]) & 0x1FF;
+			}
+
 			break;
 
-		//BG2 Scale/Rotation Parameter A - Engine A
+		//BG2 Scale/Rotation Parameters - Engine A
 		case NDS_BG2PA_A:
 		case NDS_BG2PA_A+1:
-			memory_map[address] = value;
-			
-			{
-				u16 raw_value = ((memory_map[NDS_BG2PA_A+1] << 8) | memory_map[NDS_BG2PA_A]);
-				
-				//Note: The reference points are 8-bit signed 2's complement
-				if(raw_value & 0x8000) 
-				{ 
-					u16 p = ((raw_value >> 8) - 1);
-					p = (~p & 0xFF);
-					lcd_stat->bg_affine_a[0].dx = -1.0 * p;
-				}
-
-				else { lcd_stat->bg_affine_a[0].dx = (raw_value >> 8); }
-				if((raw_value & 0xFF) != 0) { lcd_stat->bg_affine_a[0].dx += (raw_value & 0xFF) / 256.0; }
-			}
-
-			break;
-
-		//BG2 Scale/Rotation Parameter B - Engine A
 		case NDS_BG2PB_A:
 		case NDS_BG2PB_A+1:
-			memory_map[address] = value;
-
-			{
-				u16 raw_value = ((memory_map[NDS_BG2PB_A+1] << 8) | memory_map[NDS_BG2PB_A]);
-				
-				//Note: The reference points are 8-bit signed 2's complement
-				if(raw_value & 0x8000) 
-				{ 
-					u16 p = ((raw_value >> 8) - 1);
-					p = (~p & 0xFF);
-					lcd_stat->bg_affine_a[0].dmx = -1.0 * p;
-				}
-
-				else { lcd_stat->bg_affine_a[0].dmx = (raw_value >> 8); }
-				if((raw_value & 0xFF) != 0) { lcd_stat->bg_affine_a[0].dmx += (raw_value & 0xFF) / 256.0; }
-			}
-
-			break;
-
-		//BG2 Scale/Rotation Parameter C - Engine A
 		case NDS_BG2PC_A:
 		case NDS_BG2PC_A+1:
-			memory_map[address] = value;
-
-			{
-				u16 raw_value = ((memory_map[NDS_BG2PC_A+1] << 8) | memory_map[NDS_BG2PC_A]);
-				
-				//Note: The reference points are 8-bit signed 2's complement
-				if(raw_value & 0x8000) 
-				{ 
-					u16 p = ((raw_value >> 8) - 1);
-					p = (~p & 0xFF);
-					lcd_stat->bg_affine_a[0].dy = -1.0 * p;
-				}
-
-				else { lcd_stat->bg_affine_a[0].dy = (raw_value >> 8); }
-				if((raw_value & 0xFF) != 0) { lcd_stat->bg_affine_a[0].dy += (raw_value & 0xFF) / 256.0; }
-			}
-
-			break;
-
-		//BG2 Scale/Rotation Parameter D - Engine A
 		case NDS_BG2PD_A:
 		case NDS_BG2PD_A+1:
 			memory_map[address] = value;
-
+			
 			{
-				u16 raw_value = ((memory_map[NDS_BG2PD_A+1] << 8) | memory_map[NDS_BG2PD_A]);
+				u8 reg_id = (address - NDS_BG2PA_A) >> 1;
+				u32 reg_addr = (address & ~0x01);
+				float* reg_val = nullptr;
+
+				switch(reg_id)
+				{
+					case 0: reg_val = &lcd_stat->bg_affine_a[0].dx; break;
+					case 1: reg_val = &lcd_stat->bg_affine_a[0].dmx; break;
+					case 2: reg_val = &lcd_stat->bg_affine_a[0].dy; break;
+					case 3: reg_val = &lcd_stat->bg_affine_a[0].dmy; break;
+				}
+
+				u16 raw_value = ((memory_map[reg_addr+1] << 8) | memory_map[reg_addr]);
 				
 				//Note: The reference points are 8-bit signed 2's complement
 				if(raw_value & 0x8000) 
 				{ 
 					u16 p = ((raw_value >> 8) - 1);
 					p = (~p & 0xFF);
-					lcd_stat->bg_affine_a[0].dmy = -1.0 * p;
+					*reg_val = -1.0 * p;
 				}
 
-				else { lcd_stat->bg_affine_a[0].dmy = (raw_value >> 8); }
-				if((raw_value & 0xFF) != 0) { lcd_stat->bg_affine_a[0].dmy += (raw_value & 0xFF) / 256.0; }
+				else { *reg_val = (raw_value >> 8); }
+				if((raw_value & 0xFF) != 0) { *reg_val += (raw_value & 0xFF) / 256.0; }
 			}
 
 			break;
 
-		//BG2 Scale/Rotation X Reference - Engine A
+		//BG2 Scale/Rotation XY Reference - Engine A
 		case NDS_BG2X_A:
 		case NDS_BG2X_A+1:
 		case NDS_BG2X_A+2:
 		case NDS_BG2X_A+3:
-			memory_map[address] = value;
-
-			{
-				u32 x_raw = ((memory_map[NDS_BG2X_A+3] << 24) | (memory_map[NDS_BG2X_A+2] << 16) | (memory_map[NDS_BG2X_A+1] << 8) | (memory_map[NDS_BG2X_A]));
-
-				//Note: The reference points are 19-bit signed 2's complement
-				if(x_raw & 0x8000000) 
-				{ 
-					u32 x = ((x_raw >> 8) - 1);
-					x = (~x & 0x7FFFF);
-					lcd_stat->bg_affine_a[0].x_ref = -1.0 * x;
-				}
-				else { lcd_stat->bg_affine_a[0].x_ref = (x_raw >> 8) & 0x7FFFF; }
-				if((x_raw & 0xFF) != 0) { lcd_stat->bg_affine_a[0].x_ref += (x_raw & 0xFF) / 256.0; }
-
-				//Set current X position as the new reference point
-				lcd_stat->bg_affine_a[0].x_pos = lcd_stat->bg_affine_a[0].x_ref;
-			}
-
-			break;
-
-		//BG2 Scale/Rotation Y Reference - Engine A
 		case NDS_BG2Y_A:
 		case NDS_BG2Y_A+1:
 		case NDS_BG2Y_A+2:
@@ -2472,136 +2164,74 @@ void NTR_MMU::write_u8(u32 address, u8 value)
 			memory_map[address] = value;
 
 			{
-				u32 y_raw = ((memory_map[NDS_BG2Y_A+3] << 24) | (memory_map[NDS_BG2Y_A+2] << 16) | (memory_map[NDS_BG2Y_A+1] << 8) | (memory_map[NDS_BG2Y_A]));
+				u8 reg_id = (address - NDS_BG2X_A) >> 2;
+				u32 reg_addr = (address & ~0x03);
+				float* reg_val = (reg_id) ? &lcd_stat->bg_affine_a[0].y_ref : &lcd_stat->bg_affine_a[0].x_ref;
+				float* reg_pos = (reg_id) ? &lcd_stat->bg_affine_a[0].y_pos : &lcd_stat->bg_affine_a[0].x_pos;
+
+				u32 xy_raw = ((memory_map[reg_addr+3] << 24) | (memory_map[reg_addr+2] << 16) | (memory_map[reg_addr+1] << 8) | (memory_map[reg_addr]));
 
 				//Note: The reference points are 19-bit signed 2's complement
-				if(y_raw & 0x8000000) 
+				if(xy_raw & 0x8000000) 
 				{ 
-					u32 y = ((y_raw >> 8) - 1);
-					y = (~y & 0x7FFFF);
-					lcd_stat->bg_affine_a[0].y_ref = -1.0 * y;
+					u32 xy = ((xy_raw >> 8) - 1);
+					xy = (~xy & 0x7FFFF);
+					*reg_val = -1.0 * xy;
 				}
-				else { lcd_stat->bg_affine_a[0].y_ref = (y_raw >> 8) & 0x7FFFF; }
-				if((y_raw & 0xFF) != 0) { lcd_stat->bg_affine_a[0].y_ref += (y_raw & 0xFF) / 256.0; }
+				else { *reg_val = (xy_raw >> 8) & 0x7FFFF; }
+				if((xy_raw & 0xFF) != 0) { *reg_val += (xy_raw & 0xFF) / 256.0; }
 
-				//Set current Y position as the new reference point
-				lcd_stat->bg_affine_a[0].y_pos = lcd_stat->bg_affine_a[0].y_ref;
+				//Set current XY position as the new reference point
+				*reg_pos = *reg_val;
 			}
 
 			break;
 
-		//BG3 Scale/Rotation Parameter A - Engine A
+		//BG3 Scale/Rotation Parameters - Engine A
 		case NDS_BG3PA_A:
 		case NDS_BG3PA_A+1:
-			memory_map[address] = value;
-			{
-				u16 raw_value = ((memory_map[NDS_BG3PA_A+1] << 8) | memory_map[NDS_BG3PA_A]);
-				
-				//Note: The reference points are 8-bit signed 2's complement
-				if(raw_value & 0x8000) 
-				{ 
-					u16 p = ((raw_value >> 8) - 1);
-					p = (~p & 0xFF);
-					lcd_stat->bg_affine_a[1].dx = -1.0 * p;
-				}
-				else { lcd_stat->bg_affine_a[1].dx = (raw_value >> 8); }
-				if((raw_value & 0xFF) != 0) { lcd_stat->bg_affine_a[1].dx += (raw_value & 0xFF) / 256.0; }
-			}
-
-			break;
-
-		//BG3 Scale/Rotation Parameter B - Engine A
 		case NDS_BG3PB_A:
 		case NDS_BG3PB_A+1:
-			memory_map[address] = value;
-
-			{
-				u16 raw_value = ((memory_map[NDS_BG3PB_A+1] << 8) | memory_map[NDS_BG3PB_A]);
-				
-				//Note: The reference points are 8-bit signed 2's complement
-				if(raw_value & 0x8000) 
-				{ 
-					u16 p = ((raw_value >> 8) - 1);
-					p = (~p & 0xFF);
-					lcd_stat->bg_affine_a[1].dmx = -1.0 * p;
-				}
-				else { lcd_stat->bg_affine_a[1].dmx = (raw_value >> 8); }
-				if((raw_value & 0xFF) != 0) { lcd_stat->bg_affine_a[1].dmx += (raw_value & 0xFF) / 256.0; }
-			}
-
-			break;
-
-		//BG3 Scale/Rotation Parameter C - Engine A
 		case NDS_BG3PC_A:
 		case NDS_BG3PC_A+1:
-			memory_map[address] = value;
-
-			{
-				u16 raw_value = ((memory_map[NDS_BG3PC_A+1] << 8) | memory_map[NDS_BG3PC_A]);
-				
-				//Note: The reference points are 8-bit signed 2's complement
-				if(raw_value & 0x8000) 
-				{ 
-					u16 p = ((raw_value >> 8) - 1);
-					p = (~p & 0xFF);
-					lcd_stat->bg_affine_a[1].dy = -1.0 * p;
-				}
-
-				else { lcd_stat->bg_affine_a[1].dy = (raw_value >> 8); }
-				if((raw_value & 0xFF) != 0) { lcd_stat->bg_affine_a[1].dy += (raw_value & 0xFF) / 256.0; }
-			}
-
-			break;
-
-		//BG3 Scale/Rotation Parameter D - Engine A
 		case NDS_BG3PD_A:
 		case NDS_BG3PD_A+1:
 			memory_map[address] = value;
-
+			
 			{
-				u16 raw_value = ((memory_map[NDS_BG3PD_A+1] << 8) | memory_map[NDS_BG3PD_A]);
+				u8 reg_id = (address - NDS_BG3PA_A) >> 1;
+				u32 reg_addr = (address & ~0x01);
+				float* reg_val = nullptr;
+
+				switch(reg_id)
+				{
+					case 0: reg_val = &lcd_stat->bg_affine_a[1].dx; break;
+					case 1: reg_val = &lcd_stat->bg_affine_a[1].dmx; break;
+					case 2: reg_val = &lcd_stat->bg_affine_a[1].dy; break;
+					case 3: reg_val = &lcd_stat->bg_affine_a[1].dmy; break;
+				}
+
+				u16 raw_value = ((memory_map[reg_addr+1] << 8) | memory_map[reg_addr]);
 				
 				//Note: The reference points are 8-bit signed 2's complement
 				if(raw_value & 0x8000) 
 				{ 
 					u16 p = ((raw_value >> 8) - 1);
 					p = (~p & 0xFF);
-					lcd_stat->bg_affine_a[1].dmy = -1.0 * p;
+					*reg_val = -1.0 * p;
 				}
 
-				else { lcd_stat->bg_affine_a[1].dmy = (raw_value >> 8); }
-				if((raw_value & 0xFF) != 0) { lcd_stat->bg_affine_a[1].dmy += (raw_value & 0xFF) / 256.0; }
+				else { *reg_val = (raw_value >> 8); }
+				if((raw_value & 0xFF) != 0) { *reg_val += (raw_value & 0xFF) / 256.0; }
 			}
 
 			break;
 
-		//BG3 Scale/Rotation X Reference - Engine A
+		//BG3 Scale/Rotation XY Reference - Engine A
 		case NDS_BG3X_A:
 		case NDS_BG3X_A+1:
 		case NDS_BG3X_A+2:
 		case NDS_BG3X_A+3:
-			memory_map[address] = value;
-
-			{
-				u32 x_raw = ((memory_map[NDS_BG3X_A+3] << 24) | (memory_map[NDS_BG3X_A+2] << 16) | (memory_map[NDS_BG3X_A+1] << 8) | (memory_map[NDS_BG3X_A]));
-
-				//Note: The reference points are 19-bit signed 2's complement
-				if(x_raw & 0x8000000) 
-				{ 
-					u32 x = ((x_raw >> 8) - 1);
-					x = (~x & 0x7FFFF);
-					lcd_stat->bg_affine_a[1].x_ref = -1.0 * x;
-				}
-				else { lcd_stat->bg_affine_a[1].x_ref = (x_raw >> 8) & 0x7FFFF; }
-				if((x_raw & 0xFF) != 0) { lcd_stat->bg_affine_a[1].x_ref += (x_raw & 0xFF) / 256.0; }
-
-				//Set current X position as the new reference point
-				lcd_stat->bg_affine_a[1].x_pos = lcd_stat->bg_affine_a[1].x_ref;
-			}
-
-			break;
-
-		//BG3 Scale/Rotation Y Reference - Engine A
 		case NDS_BG3Y_A:
 		case NDS_BG3Y_A+1:
 		case NDS_BG3Y_A+2:
@@ -2609,139 +2239,74 @@ void NTR_MMU::write_u8(u32 address, u8 value)
 			memory_map[address] = value;
 
 			{
-				u32 y_raw = ((memory_map[NDS_BG3Y_A+3] << 24) | (memory_map[NDS_BG3Y_A+2] << 16) | (memory_map[NDS_BG3Y_A+1] << 8) | (memory_map[NDS_BG3Y_A]));
+				u8 reg_id = (address - NDS_BG3X_A) >> 2;
+				u32 reg_addr = (address & ~0x03);
+				float* reg_val = (reg_id) ? &lcd_stat->bg_affine_a[1].y_ref : &lcd_stat->bg_affine_a[1].x_ref;
+				float* reg_pos = (reg_id) ? &lcd_stat->bg_affine_a[1].y_pos : &lcd_stat->bg_affine_a[1].x_pos;
+
+				u32 xy_raw = ((memory_map[reg_addr+3] << 24) | (memory_map[reg_addr+2] << 16) | (memory_map[reg_addr+1] << 8) | (memory_map[reg_addr]));
 
 				//Note: The reference points are 19-bit signed 2's complement
-				if(y_raw & 0x8000000) 
+				if(xy_raw & 0x8000000) 
 				{ 
-					u32 y = ((y_raw >> 8) - 1);
-					y = (~y & 0x7FFFF);
-					lcd_stat->bg_affine_a[1].y_ref = -1.0 * y;
+					u32 xy = ((xy_raw >> 8) - 1);
+					xy = (~xy & 0x7FFFF);
+					*reg_val = -1.0 * xy;
 				}
-				else { lcd_stat->bg_affine_a[1].y_ref = (y_raw >> 8) & 0x7FFFF; }
-				if((y_raw & 0xFF) != 0) { lcd_stat->bg_affine_a[1].y_ref += (y_raw & 0xFF) / 256.0; }
+				else { *reg_val = (xy_raw >> 8) & 0x7FFFF; }
+				if((xy_raw & 0xFF) != 0) { *reg_val += (xy_raw & 0xFF) / 256.0; }
 
-				//Set current Y position as the new reference point
-				lcd_stat->bg_affine_a[1].y_pos = lcd_stat->bg_affine_a[1].y_ref;
+				//Set current XY position as the new reference point
+				*reg_pos = *reg_val;
 			}
 
 			break;
 
-		//BG2 Scale/Rotation Parameter A - Engine B
+		//BG2 Scale/Rotation Parameters - Engine B
 		case NDS_BG2PA_B:
 		case NDS_BG2PA_B+1:
-			memory_map[address] = value;
-			
-			{
-				u16 raw_value = ((memory_map[NDS_BG2PA_B+1] << 8) | memory_map[NDS_BG2PA_B]);
-				
-				//Note: The reference points are 8-bit signed 2's complement
-				if(raw_value & 0x8000) 
-				{ 
-					u16 p = ((raw_value >> 8) - 1);
-					p = (~p & 0xFF);
-					lcd_stat->bg_affine_b[0].dx = -1.0 * p;
-				}
-
-				else { lcd_stat->bg_affine_b[0].dx = (raw_value >> 8); }
-				if((raw_value & 0xFF) != 0) { lcd_stat->bg_affine_b[0].dx += (raw_value & 0xFF) / 256.0; }
-			}
-
-			break;
-
-		//BG2 Scale/Rotation Parameter B - Engine B
 		case NDS_BG2PB_B:
 		case NDS_BG2PB_B+1:
-			memory_map[address] = value;
-
-			{
-				u16 raw_value = ((memory_map[NDS_BG2PB_B+1] << 8) | memory_map[NDS_BG2PB_B]);
-				
-				//Note: The reference points are 8-bit signed 2's complement
-				if(raw_value & 0x8000) 
-				{ 
-					u16 p = ((raw_value >> 8) - 1);
-					p = (~p & 0xFF);
-					lcd_stat->bg_affine_b[0].dmx = -1.0 * p;
-				}
-
-				else { lcd_stat->bg_affine_b[0].dmx = (raw_value >> 8); }
-				if((raw_value & 0xFF) != 0) { lcd_stat->bg_affine_b[0].dmx += (raw_value & 0xFF) / 256.0; }
-			}
-
-			break;
-
-		//BG2 Scale/Rotation Parameter C - Engine B
 		case NDS_BG2PC_B:
 		case NDS_BG2PC_B+1:
-			memory_map[address] = value;
-
-			{
-				u16 raw_value = ((memory_map[NDS_BG2PC_B+1] << 8) | memory_map[NDS_BG2PC_B]);
-				
-				//Note: The reference points are 8-bit signed 2's complement
-				if(raw_value & 0x8000) 
-				{ 
-					u16 p = ((raw_value >> 8) - 1);
-					p = (~p & 0xFF);
-					lcd_stat->bg_affine_b[0].dy = -1.0 * p;
-				}
-
-				else { lcd_stat->bg_affine_b[0].dy = (raw_value >> 8); }
-				if((raw_value & 0xFF) != 0) { lcd_stat->bg_affine_b[0].dy += (raw_value & 0xFF) / 256.0; }
-			}
-
-			break;
-
-		//BG2 Scale/Rotation Parameter D - Engine B
 		case NDS_BG2PD_B:
 		case NDS_BG2PD_B+1:
 			memory_map[address] = value;
-
+			
 			{
-				u16 raw_value = ((memory_map[NDS_BG2PD_B+1] << 8) | memory_map[NDS_BG2PD_B]);
+				u8 reg_id = (address - NDS_BG2PA_B) >> 1;
+				u32 reg_addr = (address & ~0x01);
+				float* reg_val = nullptr;
+
+				switch(reg_id)
+				{
+					case 0: reg_val = &lcd_stat->bg_affine_b[0].dx; break;
+					case 1: reg_val = &lcd_stat->bg_affine_b[0].dmx; break;
+					case 2: reg_val = &lcd_stat->bg_affine_b[0].dy; break;
+					case 3: reg_val = &lcd_stat->bg_affine_b[0].dmy; break;
+				}
+
+				u16 raw_value = ((memory_map[reg_addr+1] << 8) | memory_map[reg_addr]);
 				
 				//Note: The reference points are 8-bit signed 2's complement
 				if(raw_value & 0x8000) 
 				{ 
 					u16 p = ((raw_value >> 8) - 1);
 					p = (~p & 0xFF);
-					lcd_stat->bg_affine_b[0].dmy = -1.0 * p;
+					*reg_val = -1.0 * p;
 				}
 
-				else { lcd_stat->bg_affine_b[0].dmy = (raw_value >> 8); }
-				if((raw_value & 0xFF) != 0) { lcd_stat->bg_affine_b[0].dmy += (raw_value & 0xFF) / 256.0; }
+				else { *reg_val = (raw_value >> 8); }
+				if((raw_value & 0xFF) != 0) { *reg_val += (raw_value & 0xFF) / 256.0; }
 			}
 
 			break;
 
-		//BG2 Scale/Rotation X Reference - Engine B
+		//BG2 Scale/Rotation XY Reference - Engine B
 		case NDS_BG2X_B:
 		case NDS_BG2X_B+1:
 		case NDS_BG2X_B+2:
 		case NDS_BG2X_B+3:
-			memory_map[address] = value;
-
-			{
-				u32 x_raw = ((memory_map[NDS_BG2X_B+3] << 24) | (memory_map[NDS_BG2X_B+2] << 16) | (memory_map[NDS_BG2X_B+1] << 8) | (memory_map[NDS_BG2X_B]));
-
-				//Note: The reference points are 19-bit signed 2's complement
-				if(x_raw & 0x8000000) 
-				{ 
-					u32 x = ((x_raw >> 8) - 1);
-					x = (~x & 0x7FFFF);
-					lcd_stat->bg_affine_b[0].x_ref = -1.0 * x;
-				}
-				else { lcd_stat->bg_affine_b[0].x_ref = (x_raw >> 8) & 0x7FFFF; }
-				if((x_raw & 0xFF) != 0) { lcd_stat->bg_affine_b[0].x_ref += (x_raw & 0xFF) / 256.0; }
-
-				//Set current X position as the new reference point
-				lcd_stat->bg_affine_b[0].x_pos = lcd_stat->bg_affine_b[0].x_ref;
-			}
-
-			break;
-
-		//BG2 Scale/Rotation Y Reference - Engine B
 		case NDS_BG2Y_B:
 		case NDS_BG2Y_B+1:
 		case NDS_BG2Y_B+2:
@@ -2749,136 +2314,74 @@ void NTR_MMU::write_u8(u32 address, u8 value)
 			memory_map[address] = value;
 
 			{
-				u32 y_raw = ((memory_map[NDS_BG2Y_B+3] << 24) | (memory_map[NDS_BG2Y_B+2] << 16) | (memory_map[NDS_BG2Y_B+1] << 8) | (memory_map[NDS_BG2Y_B]));
+				u8 reg_id = (address - NDS_BG2X_B) >> 2;
+				u32 reg_addr = (address & ~0x03);
+				float* reg_val = (reg_id) ? &lcd_stat->bg_affine_b[0].y_ref : &lcd_stat->bg_affine_b[0].x_ref;
+				float* reg_pos = (reg_id) ? &lcd_stat->bg_affine_b[0].y_pos : &lcd_stat->bg_affine_b[0].x_pos;
+
+				u32 xy_raw = ((memory_map[reg_addr+3] << 24) | (memory_map[reg_addr+2] << 16) | (memory_map[reg_addr+1] << 8) | (memory_map[reg_addr]));
 
 				//Note: The reference points are 19-bit signed 2's complement
-				if(y_raw & 0x8000000) 
+				if(xy_raw & 0x8000000) 
 				{ 
-					u32 y = ((y_raw >> 8) - 1);
-					y = (~y & 0x7FFFF);
-					lcd_stat->bg_affine_b[0].y_ref = -1.0 * y;
+					u32 xy = ((xy_raw >> 8) - 1);
+					xy = (~xy & 0x7FFFF);
+					*reg_val = -1.0 * xy;
 				}
-				else { lcd_stat->bg_affine_b[0].y_ref = (y_raw >> 8) & 0x7FFFF; }
-				if((y_raw & 0xFF) != 0) { lcd_stat->bg_affine_b[0].y_ref += (y_raw & 0xFF) / 256.0; }
+				else { *reg_val = (xy_raw >> 8) & 0x7FFFF; }
+				if((xy_raw & 0xFF) != 0) { *reg_val += (xy_raw & 0xFF) / 256.0; }
 
-				//Set current Y position as the new reference point
-				lcd_stat->bg_affine_b[0].y_pos = lcd_stat->bg_affine_b[0].y_ref;
+				//Set current XY position as the new reference point
+				*reg_pos = *reg_val;
 			}
 
 			break;
 
-		//BG3 Scale/Rotation Parameter A - Engine B
+		//BG3 Scale/Rotation Parameters - Engine B
 		case NDS_BG3PA_B:
 		case NDS_BG3PA_B+1:
-			memory_map[address] = value;
-			{
-				u16 raw_value = ((memory_map[NDS_BG3PA_B+1] << 8) | memory_map[NDS_BG3PA_B]);
-				
-				//Note: The reference points are 8-bit signed 2's complement
-				if(raw_value & 0x8000) 
-				{ 
-					u16 p = ((raw_value >> 8) - 1);
-					p = (~p & 0xFF);
-					lcd_stat->bg_affine_b[1].dx = -1.0 * p;
-				}
-				else { lcd_stat->bg_affine_b[1].dx = (raw_value >> 8); }
-				if((raw_value & 0xFF) != 0) { lcd_stat->bg_affine_b[1].dx += (raw_value & 0xFF) / 256.0; }
-			}
-
-			break;
-
-		//BG3 Scale/Rotation Parameter B - Engine B
 		case NDS_BG3PB_B:
 		case NDS_BG3PB_B+1:
-			memory_map[address] = value;
-
-			{
-				u16 raw_value = ((memory_map[NDS_BG3PB_B+1] << 8) | memory_map[NDS_BG3PB_B]);
-				
-				//Note: The reference points are 8-bit signed 2's complement
-				if(raw_value & 0x8000) 
-				{ 
-					u16 p = ((raw_value >> 8) - 1);
-					p = (~p & 0xFF);
-					lcd_stat->bg_affine_b[1].dmx = -1.0 * p;
-				}
-				else { lcd_stat->bg_affine_b[1].dmx = (raw_value >> 8); }
-				if((raw_value & 0xFF) != 0) { lcd_stat->bg_affine_b[1].dmx += (raw_value & 0xFF) / 256.0; }
-			}
-
-			break;
-
-		//BG3 Scale/Rotation Parameter C - Engine B
 		case NDS_BG3PC_B:
 		case NDS_BG3PC_B+1:
-			memory_map[address] = value;
-
-			{
-				u16 raw_value = ((memory_map[NDS_BG3PC_B+1] << 8) | memory_map[NDS_BG3PC_B]);
-				
-				//Note: The reference points are 8-bit signed 2's complement
-				if(raw_value & 0x8000) 
-				{ 
-					u16 p = ((raw_value >> 8) - 1);
-					p = (~p & 0xFF);
-					lcd_stat->bg_affine_b[1].dy = -1.0 * p;
-				}
-
-				else { lcd_stat->bg_affine_b[1].dy = (raw_value >> 8); }
-				if((raw_value & 0xFF) != 0) { lcd_stat->bg_affine_b[1].dy += (raw_value & 0xFF) / 256.0; }
-			}
-
-			break;
-
-		//BG3 Scale/Rotation Parameter D - Engine B
 		case NDS_BG3PD_B:
 		case NDS_BG3PD_B+1:
 			memory_map[address] = value;
-
+			
 			{
-				u16 raw_value = ((memory_map[NDS_BG3PD_B+1] << 8) | memory_map[NDS_BG3PD_B]);
+				u8 reg_id = (address - NDS_BG3PA_B) >> 1;
+				u32 reg_addr = (address & ~0x01);
+				float* reg_val = nullptr;
+
+				switch(reg_id)
+				{
+					case 0: reg_val = &lcd_stat->bg_affine_b[1].dx; break;
+					case 1: reg_val = &lcd_stat->bg_affine_b[1].dmx; break;
+					case 2: reg_val = &lcd_stat->bg_affine_b[1].dy; break;
+					case 3: reg_val = &lcd_stat->bg_affine_b[1].dmy; break;
+				}
+
+				u16 raw_value = ((memory_map[reg_addr+1] << 8) | memory_map[reg_addr]);
 				
 				//Note: The reference points are 8-bit signed 2's complement
 				if(raw_value & 0x8000) 
 				{ 
 					u16 p = ((raw_value >> 8) - 1);
 					p = (~p & 0xFF);
-					lcd_stat->bg_affine_b[1].dmy = -1.0 * p;
+					*reg_val = -1.0 * p;
 				}
 
-				else { lcd_stat->bg_affine_b[1].dmy = (raw_value >> 8); }
-				if((raw_value & 0xFF) != 0) { lcd_stat->bg_affine_b[1].dmy += (raw_value & 0xFF) / 256.0; }
+				else { *reg_val = (raw_value >> 8); }
+				if((raw_value & 0xFF) != 0) { *reg_val += (raw_value & 0xFF) / 256.0; }
 			}
 
 			break;
 
-		//BG3 Scale/Rotation X Reference - Engine B
+		//BG3 Scale/Rotation XY Reference - Engine B
 		case NDS_BG3X_B:
 		case NDS_BG3X_B+1:
 		case NDS_BG3X_B+2:
 		case NDS_BG3X_B+3:
-			memory_map[address] = value;
-
-			{
-				u32 x_raw = ((memory_map[NDS_BG3X_B+3] << 24) | (memory_map[NDS_BG3X_B+2] << 16) | (memory_map[NDS_BG3X_B+1] << 8) | (memory_map[NDS_BG3X_B]));
-
-				//Note: The reference points are 19-bit signed 2's complement
-				if(x_raw & 0x8000000) 
-				{ 
-					u32 x = ((x_raw >> 8) - 1);
-					x = (~x & 0x7FFFF);
-					lcd_stat->bg_affine_b[1].x_ref = -1.0 * x;
-				}
-				else { lcd_stat->bg_affine_b[1].x_ref = (x_raw >> 8) & 0x7FFFF; }
-				if((x_raw & 0xFF) != 0) { lcd_stat->bg_affine_b[1].x_ref += (x_raw & 0xFF) / 256.0; }
-
-				//Set current X position as the new reference point
-				lcd_stat->bg_affine_b[1].x_pos = lcd_stat->bg_affine_b[1].x_ref;
-			}
-
-			break;
-
-		//BG3 Scale/Rotation Y Reference - Engine B
 		case NDS_BG3Y_B:
 		case NDS_BG3Y_B+1:
 		case NDS_BG3Y_B+2:
@@ -2886,20 +2389,25 @@ void NTR_MMU::write_u8(u32 address, u8 value)
 			memory_map[address] = value;
 
 			{
-				u32 y_raw = ((memory_map[NDS_BG3Y_B+3] << 24) | (memory_map[NDS_BG3Y_B+2] << 16) | (memory_map[NDS_BG3Y_B+1] << 8) | (memory_map[NDS_BG3Y_B]));
+				u8 reg_id = (address - NDS_BG3X_B) >> 2;
+				u32 reg_addr = (address & ~0x03);
+				float* reg_val = (reg_id) ? &lcd_stat->bg_affine_b[1].y_ref : &lcd_stat->bg_affine_b[1].x_ref;
+				float* reg_pos = (reg_id) ? &lcd_stat->bg_affine_b[1].y_pos : &lcd_stat->bg_affine_b[1].x_pos;
+
+				u32 xy_raw = ((memory_map[reg_addr+3] << 24) | (memory_map[reg_addr+2] << 16) | (memory_map[reg_addr+1] << 8) | (memory_map[reg_addr]));
 
 				//Note: The reference points are 19-bit signed 2's complement
-				if(y_raw & 0x8000000) 
+				if(xy_raw & 0x8000000) 
 				{ 
-					u32 y = ((y_raw >> 8) - 1);
-					y = (~y & 0x7FFFF);
-					lcd_stat->bg_affine_b[1].y_ref = -1.0 * y;
+					u32 xy = ((xy_raw >> 8) - 1);
+					xy = (~xy & 0x7FFFF);
+					*reg_val = -1.0 * xy;
 				}
-				else { lcd_stat->bg_affine_b[1].y_ref = (y_raw >> 8) & 0x7FFFF; }
-				if((y_raw & 0xFF) != 0) { lcd_stat->bg_affine_b[1].y_ref += (y_raw & 0xFF) / 256.0; }
+				else { *reg_val = (xy_raw >> 8) & 0x7FFFF; }
+				if((xy_raw & 0xFF) != 0) { *reg_val += (xy_raw & 0xFF) / 256.0; }
 
-				//Set current Y position as the new reference point
-				lcd_stat->bg_affine_b[1].y_pos = lcd_stat->bg_affine_b[1].y_ref;
+				//Set current XY position as the new reference point
+				*reg_pos = *reg_val;
 			}
 
 			break;
@@ -3507,330 +3015,94 @@ void NTR_MMU::write_u8(u32 address, u8 value)
 
 			break;
 
-		//DMA0 Start Address
+		//DMA0 - DMA3 Start Address
 		case NDS_DMA0SAD:
 		case NDS_DMA0SAD+1:
 		case NDS_DMA0SAD+2:
 		case NDS_DMA0SAD+3:
-
-			//NDS9 DMA0 SAD
-			if(access_mode)
-			{
-				dma[0].raw_sad[address & 0x3] = value;
-				dma[0].start_address = ((dma[0].raw_sad[3] << 24) | (dma[0].raw_sad[2] << 16) | (dma[0].raw_sad[1] << 8) | dma[0].raw_sad[0]) & 0xFFFFFFF;
-			}
-
-			//ND7 DMA0 SAD
-			else
-			{
-				dma[4].raw_sad[address & 0x3] = value;
-				dma[4].start_address = ((dma[4].raw_sad[3] << 24) | (dma[4].raw_sad[2] << 16) | (dma[4].raw_sad[1] << 8) | dma[4].raw_sad[0]) & 0x7FFFFFF;
-			}
-
-			break;
-
-		//DMA0 Destination Address
-		case NDS_DMA0DAD:
-		case NDS_DMA0DAD+1:
-		case NDS_DMA0DAD+2:
-		case NDS_DMA0DAD+3:
-
-			//NDS9 DMA0 DAD
-			if(access_mode)
-			{
-				dma[0].raw_dad[address & 0x3] = value;
-				dma[0].destination_address = ((dma[0].raw_dad[3] << 24) | (dma[0].raw_dad[2] << 16) | (dma[0].raw_dad[1] << 8) | dma[0].raw_dad[0]) & 0xFFFFFFF;
-			}
-
-			//ND7 DMA0 DAD
-			else
-			{
-				dma[4].raw_dad[address & 0x3] = value;
-				dma[4].destination_address = ((dma[4].raw_dad[3] << 24) | (dma[4].raw_dad[2] << 16) | (dma[4].raw_dad[1] << 8) | dma[4].raw_dad[0]) & 0x7FFFFFF;
-			}
-
-			break;
-
-		//DMA0 Control
-		case NDS_DMA0CNT:
-		case NDS_DMA0CNT+1:
-		case NDS_DMA0CNT+2:
-		case NDS_DMA0CNT+3:
-			
-			//NDS9 DMA0 CNT
-			if(access_mode)
-			{
-				dma[0].raw_cnt[address & 0x3] = value;
-				dma[0].control = ((dma[0].raw_cnt[3] << 24) | (dma[0].raw_cnt[2] << 16) | (dma[0].raw_cnt[1] << 8) | dma[0].raw_cnt[0]);
-				dma[0].word_count = dma[0].control & 0x1FFFFF;
-				dma[0].dest_addr_ctrl = (dma[0].control >> 21) & 0x3;
-				dma[0].src_addr_ctrl = (dma[0].control >> 23) & 0x3;
-				dma[0].word_type = (dma[0].control & 0x4000000) ? 1 : 0;
-			
-				dma[0].enable = true;
-				dma[0].started = false;
-				dma[0].delay = 2;
-			}
-
-			//NDS7 DMA0 CNT
-			else
-			{
-				dma[4].raw_cnt[address & 0x3] = value;
-				dma[4].control = ((dma[4].raw_cnt[3] << 24) | (dma[4].raw_cnt[2] << 16) | (dma[4].raw_cnt[1] << 8) | dma[4].raw_cnt[0]);
-				dma[4].word_count = dma[4].control & 0x3FFF;
-				dma[4].dest_addr_ctrl = (dma[4].control >> 21) & 0x3;
-				dma[4].src_addr_ctrl = (dma[4].control >> 23) & 0x3;
-				dma[4].word_type = (dma[4].control & 0x4000000) ? 1 : 0;
-			
-				dma[4].enable = true;
-				dma[4].started = false;
-				dma[4].delay = 2;
-			}
-
-			break;
-
-		//DMA1 Start Address
 		case NDS_DMA1SAD:
 		case NDS_DMA1SAD+1:
 		case NDS_DMA1SAD+2:
 		case NDS_DMA1SAD+3:
-
-			//NDS9 DMA1 SAD
-			if(access_mode)
-			{
-				dma[1].raw_sad[address & 0x3] = value;
-				dma[1].start_address = ((dma[1].raw_sad[3] << 24) | (dma[1].raw_sad[2] << 16) | (dma[1].raw_sad[1] << 8) | dma[1].raw_sad[0]) & 0xFFFFFFF;
-			}
-
-			//ND7 DMA1 SAD
-			else
-			{
-				dma[5].raw_sad[address & 0x3] = value;
-				dma[5].start_address = ((dma[5].raw_sad[3] << 24) | (dma[5].raw_sad[2] << 16) | (dma[5].raw_sad[1] << 8) | dma[5].raw_sad[0]) & 0xFFFFFFF;
-			}
-
-			break;
-
-		//DMA1 Destination Address
-		case NDS_DMA1DAD:
-		case NDS_DMA1DAD+1:
-		case NDS_DMA1DAD+2:
-		case NDS_DMA1DAD+3:
-
-			//NDS9 DMA1 DAD
-			if(access_mode)
-			{
-				dma[1].raw_dad[address & 0x3] = value;
-				dma[1].destination_address = ((dma[1].raw_dad[3] << 24) | (dma[1].raw_dad[2] << 16) | (dma[1].raw_dad[1] << 8) | dma[1].raw_dad[0]) & 0xFFFFFFF;
-			}
-
-			//ND7 DMA1 DAD
-			else
-			{
-				dma[5].raw_dad[address & 0x3] = value;
-				dma[5].destination_address = ((dma[5].raw_dad[3] << 24) | (dma[5].raw_dad[2] << 16) | (dma[5].raw_dad[1] << 8) | dma[5].raw_dad[0]) & 0x7FFFFFF;
-			}
-
-			break;
-
-		//DMA1 Control
-		case NDS_DMA1CNT:
-		case NDS_DMA1CNT+1:
-		case NDS_DMA1CNT+2:
-		case NDS_DMA1CNT+3:
-
-			//NDS9 DMA1 CNT
-			if(access_mode)
-			{
-				dma[1].raw_cnt[address & 0x3] = value;
-				dma[1].control = ((dma[1].raw_cnt[3] << 24) | (dma[1].raw_cnt[2] << 16) | (dma[1].raw_cnt[1] << 8) | dma[1].raw_cnt[0]);
-				dma[1].word_count = dma[1].control & 0x1FFFFF;
-				dma[1].dest_addr_ctrl = (dma[1].control >> 21) & 0x3;
-				dma[1].src_addr_ctrl = (dma[1].control >> 23) & 0x3;
-				dma[1].word_type = (dma[1].control & 0x4000000) ? 1 : 0;
-			
-				dma[1].enable = true;
-				dma[1].started = false;
-				dma[1].delay = 2;
-			}
-
-			//NDS7 DMA1 CNT
-			else
-			{
-				dma[5].raw_cnt[address & 0x3] = value;
-				dma[5].control = ((dma[5].raw_cnt[3] << 24) | (dma[5].raw_cnt[2] << 16) | (dma[5].raw_cnt[1] << 8) | dma[5].raw_cnt[0]);
-				dma[5].word_count = dma[5].control & 0x3FFF;
-				dma[5].dest_addr_ctrl = (dma[5].control >> 21) & 0x3;
-				dma[5].src_addr_ctrl = (dma[5].control >> 23) & 0x3;
-				dma[5].word_type = (dma[5].control & 0x4000000) ? 1 : 0;
-			
-				dma[5].enable = true;
-				dma[5].started = false;
-				dma[5].delay = 2;
-			}
-
-			break;
-
-		//DMA2 Start Address
 		case NDS_DMA2SAD:
 		case NDS_DMA2SAD+1:
 		case NDS_DMA2SAD+2:
 		case NDS_DMA2SAD+3:
-
-			//NDS9 DMA2 SAD
-			if(access_mode)
-			{
-				dma[2].raw_sad[address & 0x3] = value;
-				dma[2].start_address = ((dma[2].raw_sad[3] << 24) | (dma[2].raw_sad[2] << 16) | (dma[2].raw_sad[1] << 8) | dma[2].raw_sad[0]) & 0xFFFFFFF;
-			}
-
-			//ND7 DMA2 SAD
-			else
-			{
-				dma[6].raw_sad[address & 0x3] = value;
-				dma[6].start_address = ((dma[6].raw_sad[3] << 24) | (dma[6].raw_sad[2] << 16) | (dma[6].raw_sad[1] << 8) | dma[6].raw_sad[0]) & 0xFFFFFFF;
-			}
-
-			break;
-
-		//DMA2 Destination Address
-		case NDS_DMA2DAD:
-		case NDS_DMA2DAD+1:
-		case NDS_DMA2DAD+2:
-		case NDS_DMA2DAD+3:
-
-			//NDS9 DMA2 DAD
-			if(access_mode)
-			{
-				dma[2].raw_dad[address & 0x3] = value;
-				dma[2].destination_address = ((dma[2].raw_dad[3] << 24) | (dma[2].raw_dad[2] << 16) | (dma[2].raw_dad[1] << 8) | dma[2].raw_dad[0]) & 0xFFFFFFF;
-			}
-
-			//ND7 DMA2 DAD
-			else
-			{
-				dma[6].raw_dad[address & 0x3] = value;
-				dma[6].destination_address = ((dma[6].raw_dad[3] << 24) | (dma[6].raw_dad[2] << 16) | (dma[6].raw_dad[1] << 8) | dma[6].raw_dad[0]) & 0x7FFFFFF;
-			}
-
-			break;
-
-		//DMA2 Control
-		case NDS_DMA2CNT:
-		case NDS_DMA2CNT+1:
-		case NDS_DMA2CNT+2:
-		case NDS_DMA2CNT+3:
-
-			//NDS9 DMA2 CNT
-			if(access_mode)
-			{
-				dma[2].raw_cnt[address & 0x3] = value;
-				dma[2].control = ((dma[2].raw_cnt[3] << 24) | (dma[2].raw_cnt[2] << 16) | (dma[2].raw_cnt[1] << 8) | dma[2].raw_cnt[0]);
-				dma[2].word_count = dma[2].control & 0x1FFFFF;
-				dma[2].dest_addr_ctrl = (dma[2].control >> 21) & 0x3;
-				dma[2].src_addr_ctrl = (dma[2].control >> 23) & 0x3;
-				dma[2].word_type = (dma[2].control & 0x4000000) ? 1 : 0;
-			
-				dma[2].enable = true;
-				dma[2].started = false;
-				dma[2].delay = 2;
-			}
-
-			//NDS7 DMA2 CNT
-			else
-			{
-				dma[6].raw_cnt[address & 0x3] = value;
-				dma[6].control = ((dma[6].raw_cnt[3] << 24) | (dma[6].raw_cnt[2] << 16) | (dma[6].raw_cnt[1] << 8) | dma[6].raw_cnt[0]);
-				dma[6].word_count = dma[6].control & 0x3FFF;
-				dma[6].dest_addr_ctrl = (dma[6].control >> 21) & 0x3;
-				dma[6].src_addr_ctrl = (dma[6].control >> 23) & 0x3;
-				dma[6].word_type = (dma[6].control & 0x4000000) ? 1 : 0;
-			
-				dma[6].enable = true;
-				dma[6].started = false;
-				dma[6].delay = 2;
-			}
-
-			break;
-
-		//DMA3 Start Address
 		case NDS_DMA3SAD:
 		case NDS_DMA3SAD+1:
 		case NDS_DMA3SAD+2:
 		case NDS_DMA3SAD+3:
-
-			//NDS9 DMA3 SAD
-			if(access_mode)
 			{
-				dma[3].raw_sad[address & 0x3] = value;
-				dma[3].start_address = ((dma[3].raw_sad[3] << 24) | (dma[3].raw_sad[2] << 16) | (dma[3].raw_sad[1] << 8) | dma[3].raw_sad[0]) & 0xFFFFFFF;
-			}
+				u8 reg_id = dma_reg_lut[address - NDS_DMA0SAD];
+				reg_id += (access_mode) ? 0 : 4;
 
-			//ND7 DMA3 SAD
-			else
-			{
-				dma[7].raw_sad[address & 0x3] = value;
-				dma[7].start_address = ((dma[7].raw_sad[3] << 24) | (dma[7].raw_sad[2] << 16) | (dma[7].raw_sad[1] << 8) | dma[7].raw_sad[0]) & 0xFFFFFFF;
+				dma[reg_id].raw_sad[address & 0x3] = value;
+				dma[reg_id].start_address = ((dma[reg_id].raw_sad[3] << 24) | (dma[reg_id].raw_sad[2] << 16) | (dma[reg_id].raw_sad[1] << 8) | dma[reg_id].raw_sad[0]);
+				dma[reg_id].start_address &= dma[reg_id].addr_mask;
 			}
 
 			break;
 
-		//DMA3 Destination Address
+		//DMA0 - DMA3 Destination Address
+		case NDS_DMA0DAD:
+		case NDS_DMA0DAD+1:
+		case NDS_DMA0DAD+2:
+		case NDS_DMA0DAD+3:
+		case NDS_DMA1DAD:
+		case NDS_DMA1DAD+1:
+		case NDS_DMA1DAD+2:
+		case NDS_DMA1DAD+3:
+		case NDS_DMA2DAD:
+		case NDS_DMA2DAD+1:
+		case NDS_DMA2DAD+2:
+		case NDS_DMA2DAD+3:
 		case NDS_DMA3DAD:
 		case NDS_DMA3DAD+1:
 		case NDS_DMA3DAD+2:
 		case NDS_DMA3DAD+3:
-
-			//NDS9 DMA3 DAD
-			if(access_mode)
 			{
-				dma[3].raw_dad[address & 0x3] = value;
-				dma[3].destination_address = ((dma[3].raw_dad[3] << 24) | (dma[3].raw_dad[2] << 16) | (dma[3].raw_dad[1] << 8) | dma[3].raw_dad[0]) & 0xFFFFFFF;
-			}
+				u8 reg_id = dma_reg_lut[address - NDS_DMA0SAD];
+				reg_id += (access_mode) ? 0 : 4;
 
-			//ND7 DMA3 DAD
-			else
-			{
-				dma[7].raw_dad[address & 0x3] = value;
-				dma[7].destination_address = ((dma[7].raw_dad[3] << 24) | (dma[7].raw_dad[2] << 16) | (dma[7].raw_dad[1] << 8) | dma[7].raw_dad[0]) & 0xFFFFFFF;
+				dma[reg_id].raw_dad[address & 0x3] = value;
+				dma[reg_id].destination_address = ((dma[reg_id].raw_dad[3] << 24) | (dma[reg_id].raw_dad[2] << 16) | (dma[reg_id].raw_dad[1] << 8) | dma[reg_id].raw_dad[0]);
+				dma[reg_id].destination_address &= dma[reg_id].addr_mask;
 			}
 
 			break;
 
-		//DMA3 Control
+		//DMA0 - DMA3 Control
+		case NDS_DMA0CNT:
+		case NDS_DMA0CNT+1:
+		case NDS_DMA0CNT+2:
+		case NDS_DMA0CNT+3:
+		case NDS_DMA1CNT:
+		case NDS_DMA1CNT+1:
+		case NDS_DMA1CNT+2:
+		case NDS_DMA1CNT+3:
+		case NDS_DMA2CNT:
+		case NDS_DMA2CNT+1:
+		case NDS_DMA2CNT+2:
+		case NDS_DMA2CNT+3:
 		case NDS_DMA3CNT:
 		case NDS_DMA3CNT+1:
 		case NDS_DMA3CNT+2:
 		case NDS_DMA3CNT+3:
-
-			//NDS9 DMA3 CNT
-			if(access_mode)
 			{
-				dma[3].raw_cnt[address & 0x3] = value;
-				dma[3].control = ((dma[3].raw_cnt[3] << 24) | (dma[3].raw_cnt[2] << 16) | (dma[3].raw_cnt[1] << 8) | dma[3].raw_cnt[0]);
-				dma[3].word_count = dma[3].control & 0x1FFFFF;
-				dma[3].dest_addr_ctrl = (dma[3].control >> 21) & 0x3;
-				dma[3].src_addr_ctrl = (dma[3].control >> 23) & 0x3;
-				dma[3].word_type = (dma[3].control & 0x4000000) ? 1 : 0;
-			
-				dma[3].enable = true;
-				dma[3].started = false;
-				dma[3].delay = 2;
-			}
 
-			//NDS7 DMA3 CNT
-			else
-			{
-				dma[7].raw_cnt[address & 0x3] = value;
-				dma[7].control = ((dma[7].raw_cnt[3] << 24) | (dma[7].raw_cnt[2] << 16) | (dma[7].raw_cnt[1] << 8) | dma[7].raw_cnt[0]);
-				dma[7].word_count = dma[7].control & 0xFFFF;
-				dma[7].dest_addr_ctrl = (dma[7].control >> 21) & 0x3;
-				dma[7].src_addr_ctrl = (dma[7].control >> 23) & 0x3;
-				dma[7].word_type = (dma[7].control & 0x4000000) ? 1 : 0;
+				u8 reg_id = dma_reg_lut[address - NDS_DMA0SAD];
+				reg_id += (access_mode) ? 0 : 4;
+
+				dma[reg_id].raw_cnt[address & 0x3] = value;
+				dma[reg_id].control = ((dma[reg_id].raw_cnt[3] << 24) | (dma[reg_id].raw_cnt[2] << 16) | (dma[reg_id].raw_cnt[1] << 8) | dma[reg_id].raw_cnt[0]);
+				dma[reg_id].word_count = dma[reg_id].control & dma[reg_id].word_mask;
+				dma[reg_id].dest_addr_ctrl = (dma[reg_id].control >> 21) & 0x3;
+				dma[reg_id].src_addr_ctrl = (dma[reg_id].control >> 23) & 0x3;
+				dma[reg_id].word_type = (dma[reg_id].control & 0x4000000) ? 1 : 0;
 			
-				dma[7].enable = true;
-				dma[7].started = false;
-				dma[7].delay = 2;
+				dma[reg_id].enable = true;
+				dma[reg_id].started = false;
+				dma[reg_id].delay = 2;
 			}
 
 			break;
@@ -3882,80 +3154,37 @@ void NTR_MMU::write_u8(u32 address, u8 value)
 
 			break;
 
-		//Timer 0 Reload Value
+		//Timer 0 - 3 Reload Value
 		case NDS_TM0CNT_L:
 		case NDS_TM0CNT_L+1:
-			if(access_mode)
-			{
-				nds9_timer->at(0).reload_value &= (address & 0x1) ? 0xFF : 0xFF00;
-				nds9_timer->at(0).reload_value |= (address & 0x1) ? (value << 8) : value;
-			}
-
-			else
-			{
-				nds7_timer->at(0).reload_value &= (address & 0x1) ? 0xFF : 0xFF00;
-				nds7_timer->at(0).reload_value |= (address & 0x1) ? (value << 8) : value;
-			}
-
-			break;
-
-		//Timer 1 Reload Value
 		case NDS_TM1CNT_L:
 		case NDS_TM1CNT_L+1:
-			if(access_mode)
-			{
-				nds9_timer->at(1).reload_value &= (address & 0x1) ? 0xFF : 0xFF00;
-				nds9_timer->at(1).reload_value |= (address & 0x1) ? (value << 8) : value;
-			}
-
-			else
-			{
-				nds7_timer->at(1).reload_value &= (address & 0x1) ? 0xFF : 0xFF00;
-				nds7_timer->at(1).reload_value |= (address & 0x1) ? (value << 8) : value;
-			}
-
-			break;
-
-		//Timer 2 Reload Value
 		case NDS_TM2CNT_L:
 		case NDS_TM2CNT_L+1:
-			if(access_mode)
-			{
-				nds9_timer->at(2).reload_value &= (address & 0x1) ? 0xFF : 0xFF00;
-				nds9_timer->at(2).reload_value |= (address & 0x1) ? (value << 8) : value;
-			}
-
-			else
-			{
-				nds7_timer->at(2).reload_value &= (address & 0x1) ? 0xFF : 0xFF00;
-				nds7_timer->at(2).reload_value |= (address & 0x1) ? (value << 8) : value;
-			}
-
-			break;
-
-		//Timer 3 Reload Value
 		case NDS_TM3CNT_L:
 		case NDS_TM3CNT_L+1:
-			if(access_mode)
 			{
-				nds9_timer->at(3).reload_value &= (address & 0x1) ? 0xFF : 0xFF00;
-				nds9_timer->at(3).reload_value |= (address & 0x1) ? (value << 8) : value;
-			}
+				u8 reg_id = (address & 0x0F) >> 2;
+				nds_timer* timer = (access_mode) ? &nds9_timer->at(reg_id) : &nds7_timer->at(reg_id);
 
-			else
-			{
-				nds7_timer->at(3).reload_value &= (address & 0x1) ? 0xFF : 0xFF00;
-				nds7_timer->at(3).reload_value |= (address & 0x1) ? (value << 8) : value;
+				timer->reload_value &= (address & 0x1) ? 0xFF : 0xFF00;
+				timer->reload_value |= (address & 0x1) ? (value << 8) : value;
 			}
 
 			break;
 
-		//Timer 0 Control
+		//Timer 0 - 3 Control
 		case NDS_TM0CNT_H:
 		case NDS_TM0CNT_H+1:
+		case NDS_TM1CNT_H:
+		case NDS_TM1CNT_H+1:
+		case NDS_TM2CNT_H:
+		case NDS_TM2CNT_H+1:
+		case NDS_TM3CNT_H:
+		case NDS_TM3CNT_H+1:
 			{
-				//Grab pointer to NDS9 or NDS7 Timer 0
-				nds_timer* timer = (access_mode) ? &nds9_timer->at(0) : &nds7_timer->at(0);
+				u8 reg_id = (address & 0x0F) >> 2;
+				nds_timer* timer = (access_mode) ? &nds9_timer->at(reg_id) : &nds7_timer->at(reg_id);
 
 				bool prev_enable = (timer->cnt & 0x80) ?  true : false;
 				timer->cnt &= (address & 0x1) ? 0xFF : 0xFF00;
@@ -3980,331 +3209,141 @@ void NTR_MMU::write_u8(u32 address, u8 value)
 
 			break;
 
-		//Timer 1 Control
-		case NDS_TM1CNT_H:
-		case NDS_TM1CNT_H+1:
-			{
-				//Grab pointer to NDS9 or NDS7 Timer 1
-				nds_timer* timer = (access_mode) ? &nds9_timer->at(1) : &nds7_timer->at(1);
-
-				bool prev_enable = (timer->cnt & 0x80) ?  true : false;
-				timer->cnt &= (address & 0x1) ? 0xFF : 0xFF00;
-				timer->cnt |= (address & 0x1) ? (value << 8) : value;
-
-				timer->count_up = (timer->cnt & 0x4) ? true : false;
-				timer->enable = (timer->cnt & 0x80) ?  true : false;
-				timer->interrupt = (timer->cnt & 0x40) ? true : false;
-				if(timer->enable && !prev_enable) { timer->counter = timer->reload_value; }
-
-				switch(timer->cnt & 0x3)
-				{
-					case 0x0: timer->prescalar = 1; break;
-					case 0x1: timer->prescalar = 64; break;
-					case 0x2: timer->prescalar = 256; break;
-					case 0x3: timer->prescalar = 1024; break;
-				}
-
-				if(timer->count_up) { timer->prescalar = 1; }
-
-				timer->clock = timer->prescalar; 
-			}
-
-			break;
-
-		//Timer 2 Control
-		case NDS_TM2CNT_H:
-		case NDS_TM2CNT_H+1:
-			{
-				//Grab pointer to NDS9 or NDS7 Timer 2
-				nds_timer* timer = (access_mode) ? &nds9_timer->at(2) : &nds7_timer->at(2);
-
-				bool prev_enable = (timer->cnt & 0x80) ?  true : false;
-				timer->cnt &= (address & 0x1) ? 0xFF : 0xFF00;
-				timer->cnt |= (address & 0x1) ? (value << 8) : value;
-
-				timer->count_up = (timer->cnt & 0x4) ? true : false;
-				timer->enable = (timer->cnt & 0x80) ?  true : false;
-				timer->interrupt = (timer->cnt & 0x40) ? true : false;
-				if(timer->enable && !prev_enable) { timer->counter = timer->reload_value; }
-
-				switch(timer->cnt & 0x3)
-				{
-					case 0x0: timer->prescalar = 1; break;
-					case 0x1: timer->prescalar = 64; break;
-					case 0x2: timer->prescalar = 256; break;
-					case 0x3: timer->prescalar = 1024; break;
-				}
-
-				if(timer->count_up) { timer->prescalar = 1; }
-
-				timer->clock = timer->prescalar; 
-			}
-
-			break;
-
-		//Timer 3 Control
-		case NDS_TM3CNT_H:
-		case NDS_TM3CNT_H+1:
-			{
-				//Grab pointer to NDS9 or NDS7 Timer 3
-				nds_timer* timer = (access_mode) ? &nds9_timer->at(3) : &nds7_timer->at(3);
-
-				bool prev_enable = (timer->cnt & 0x80) ?  true : false;
-				timer->cnt &= (address & 0x1) ? 0xFF : 0xFF00;
-				timer->cnt |= (address & 0x1) ? (value << 8) : value;
-
-				timer->count_up = (timer->cnt & 0x4) ? true : false;
-				timer->enable = (timer->cnt & 0x80) ?  true : false;
-				timer->interrupt = (timer->cnt & 0x40) ? true : false;
-				if(timer->enable && !prev_enable) { timer->counter = timer->reload_value; }
-
-				switch(timer->cnt & 0x3)
-				{
-					case 0x0: timer->prescalar = 1; break;
-					case 0x1: timer->prescalar = 64; break;
-					case 0x2: timer->prescalar = 256; break;
-					case 0x3: timer->prescalar = 1024; break;
-				}
-
-				if(timer->count_up) { timer->prescalar = 1; }
-
-				timer->clock = timer->prescalar; 
-			}
-
-			break;
-
 		case NDS_IPCSYNC: break;
 
 		case NDS_IPCSYNC+1:
-
-			//NDS9 -> NDS7
-			if(access_mode)
 			{
+				nds_interprocess* src_ipc = (access_mode) ? &nds9_ipc : &nds7_ipc;
+				nds_interprocess* dst_ipc = (access_mode) ? &nds7_ipc : &nds9_ipc;
+				u32* dst_if = (access_mode) ? &nds7_if : &nds9_if;
+
 				//Set new Bits 8-15
-				nds9_ipc.sync &= 0xFF;
-				nds9_ipc.sync |= ((value & 0x6F) << 8);
+				src_ipc->sync &= 0xFF;
+				src_ipc->sync |= ((value & 0x6F) << 8);
 				
-				//Copy Bits 8-11 from NDS9 to Bits 0-3 on the NDS7
-				nds7_ipc.sync &= 0xFFF0;
-				nds7_ipc.sync |= (value & 0xF);
+				//Copy Bits 8-11 from source CPU to Bits 0-3 on the destination CPU
+				dst_ipc->sync &= 0xFFF0;
+				dst_ipc->sync |= (value & 0xF);
 
-				//Trigger IPC IRQ on NDS7 if sending IRQ is enabled
-				if((nds9_ipc.sync & 0x2000) && (nds7_ipc.sync & 0x4000))
+				//Trigger IPC IRQ on the destination CPU if sending IRQ is enabled
+				if((src_ipc->sync & 0x2000) && (dst_ipc->sync & 0x4000))
 				{
-					nds7_if |= 0x10000;
-				}
-			}
-
-			//NDS7 -> NDS9
-			else
-			{
-				//Set new Bits 8-15
-				nds7_ipc.sync &= 0xFF;
-				nds7_ipc.sync |= ((value & 0x6F) << 8);
-				
-				//Copy Bits 8-11 from NDS7 to Bits 0-3 on the NDS9
-				nds9_ipc.sync &= 0xFFF0;
-				nds9_ipc.sync |= (value & 0xF);
-
-				//Trigger IPC IRQ on NDS9 if sending IRQ is enabled
-				if((nds7_ipc.sync & 0x2000) && (nds9_ipc.sync & 0x4000))
-				{
-					nds9_if |= 0x10000;
+					*dst_if |= 0x10000;
 				}
 			}
 
 			break;
 
 		case NDS_IPCFIFOCNT:
-			if(access_mode)
 			{
-				u16 irq_trigger = (nds9_ipc.cnt & 0x5);
+				nds_interprocess* src_ipc = (access_mode) ? &nds9_ipc : &nds7_ipc;
+				nds_interprocess* dst_ipc = (access_mode) ? &nds7_ipc : &nds9_ipc;
+				u32* src_if = (access_mode) ? &nds9_if : &nds7_if;
 
-				nds9_ipc.cnt &= 0xFFF3;
-				nds9_ipc.cnt |= (value & 0xC);
+				u16 irq_trigger = (src_ipc->cnt & 0x5);
 
-				//Raise Send FIFO Empty IRQ when Bit 2 goes from 0 to 1
-				if((irq_trigger != 0x5) && ((nds9_ipc.cnt & 0x5) == 0x5)) { nds9_if |= 0x20000; }
+				src_ipc->cnt &= 0xFFF3;
+				src_ipc->cnt |= (value & 0xC);
+
+				//Raise Send FIFO Empty IRQ on source CPU when Bit 2 goes from 0 to 1
+				if((irq_trigger != 0x5) && ((src_ipc->cnt & 0x5) == 0x5)) { *src_if |= 0x20000; }
 
 				//Clear Send FIFO
-				if(nds9_ipc.cnt & 0x8)
+				if(src_ipc->cnt & 0x8)
 				{
-					while(!nds9_ipc.fifo.empty()) { nds9_ipc.fifo.pop(); }
+					while(!src_ipc->fifo.empty()) { src_ipc->fifo.pop(); }
 					
-					//Set SNDFIFO EMPTY Status on NDS9
-					nds9_ipc.cnt |= 0x1;
+					//Set SNDFIFO EMPTY Status on source CPU
+					src_ipc->cnt |= 0x1;
 
-					//Set RECVFIFO EMPTY Status on NDS7
-					nds7_ipc.cnt |= 0x100;
+					//Set RECVFIFO EMPTY Status on destination CPU
+					dst_ipc->cnt |= 0x100;
 
 					//Raise Send FIFO EMPTY IRQ if necessary
-					if(nds9_ipc.cnt & 0x4) { nds9_if |= 0x20000; }
+					if(src_ipc->cnt & 0x4) { *src_if |= 0x20000; }
 
 					//Set latest readable RECV value to zero
-					nds9_ipc.fifo_latest = 0;
+					src_ipc->fifo_latest = 0;
 
 					//Bit 3 is write only, so effectively never set it
-					nds9_ipc.cnt &= ~0x8;
-				}
-			}
-
-			else
-			{
-				u16 irq_trigger = (nds7_ipc.cnt & 0x5);
-
-				nds7_ipc.cnt &= 0xFFF3;
-				nds7_ipc.cnt |= (value & 0xC);
-
-				//Raise Send FIFO Empty IRQ when Bit 2 goes from 0 to 1
-				if((irq_trigger != 0x5) && ((nds7_ipc.cnt & 0x5) == 0x5)) { nds7_if |= 0x20000; }
-
-				//Clear Send FIFO
-				if(nds7_ipc.cnt & 0x8)
-				{
-					while(!nds7_ipc.fifo.empty()) { nds7_ipc.fifo.pop(); }
-					
-					//Set SNDFIFO EMPTY Status on NDS7
-					nds7_ipc.cnt |= 0x1;
-
-					//Set RECVFIFO EMPTY Status on NDS9
-					nds9_ipc.cnt |= 0x100;
-
-					//Raise Send FIFO EMPTY IRQ if necessary
-					if(nds7_ipc.cnt & 0x4) { nds7_if |= 0x20000; }
-
-					//Set latest readable RECV value to zero
-					nds7_ipc.fifo_latest = 0;
-
-					//Bit 3 is write only, so effectively never set it
-					nds7_ipc.cnt &= ~0x8;
+					src_ipc->cnt &= ~0x8;
 				}
 			}
 
 			break;
 
 		case NDS_IPCFIFOCNT+1:
-			if(access_mode)
 			{
+				nds_interprocess* src_ipc = (access_mode) ? &nds9_ipc : &nds7_ipc;
+				nds_interprocess* dst_ipc = (access_mode) ? &nds7_ipc : &nds9_ipc;
+				u32* src_if = (access_mode) ? &nds9_if : &nds7_if;
+
 				//Acknowledge IPCFIFO error bit
 				if(value & 0x40) { value &= ~0x40; }
-				else if(nds9_ipc.cnt & 0x4000) { value |= 0x40; }
+				else if(src_ipc->cnt & 0x4000) { value |= 0x40; }
 
-				u16 irq_trigger = (nds9_ipc.cnt & 0x500);
+				u16 irq_trigger = (src_ipc->cnt & 0x500);
 
-				nds9_ipc.cnt &= 0x3FF;
-				nds9_ipc.cnt |= ((value & 0xC4) << 8);
-
-				//Raise Receive FIFO Not Empty IRQ when Bit 10 goes from 0 to 1
-				if((irq_trigger != 0x400) && ((nds9_ipc.cnt & 0x500) == 0x400)) { nds9_if |= 0x40000; }
-			}
-
-			else
-			{
-				//Acknowledge IPCFIFO error bit
-				if(value & 0x40) { value &= ~0x40; }
-				else if(nds7_ipc.cnt & 0x4000) { value |= 0x40; }
-	
-				u16 irq_trigger = (nds7_ipc.cnt & 0x500);
-
-				nds7_ipc.cnt &= 0x3FF;
-				nds7_ipc.cnt |= ((value & 0xC4) << 8);
+				src_ipc->cnt &= 0x3FF;
+				src_ipc->cnt |= ((value & 0xC4) << 8);
 
 				//Raise Receive FIFO Not Empty IRQ when Bit 10 goes from 0 to 1
-				if((irq_trigger != 0x400) && ((nds7_ipc.cnt & 0x500) == 0x400)) { nds7_if |= 0x40000; }
+				if((irq_trigger != 0x400) && ((src_ipc->cnt & 0x500) == 0x400)) { *src_if |= 0x40000; }
 			}
 
 			break;
 
 		case NDS_IPCFIFOSND:
-			if((access_mode) && (nds9_ipc.cnt & 0x8000))
 			{
-				nds9_ipc.fifo_incoming &= ~0xFF;
-				nds9_ipc.fifo_incoming |= value;
+				nds_interprocess* src_ipc = (access_mode) ? &nds9_ipc : &nds7_ipc;
+				nds_interprocess* dst_ipc = (access_mode) ? &nds7_ipc : &nds9_ipc;
+				u32* dst_if = (access_mode) ? &nds7_if : &nds9_if;
 
-				//FIFO can only hold a maximum of 16 words
-				if(nds9_ipc.fifo.size() == 16)
+				if(src_ipc->cnt & 0x8000)
 				{
-					nds9_ipc.fifo.pop();
+					src_ipc->fifo_incoming &= ~0xFF;
+					src_ipc->fifo_incoming |= value;
 
-					//Set Bit 14 of IPCFIFOCNT to indicate error
-					nds9_ipc.cnt |= 0x4000;
-				}
+					//FIFO can only hold a maximum of 16 words
+					if(src_ipc->fifo.size() == 16)
+					{
+						src_ipc->fifo.pop();
 
-				else
-				{
-					//Unset Bit 14 of IPCFIFOCNT to indicate no errors
-					nds9_ipc.cnt &= ~0x4000;
-				}
+						//Set Bit 14 of IPCFIFOCNT to indicate error
+						src_ipc->cnt |= 0x4000;
+					}
 
-				//Unset SNDFIFO Empty Status on NDS9
-				nds9_ipc.cnt &= ~0x1;
+					else
+					{
+						//Unset Bit 14 of IPCFIFOCNT to indicate no errors
+						src_ipc->cnt &= ~0x4000;
+					}
 
-				//Unset RECVFIFO Empty Status on NDS7
-				nds7_ipc.cnt &= ~0x100;
+					//Unset SNDFIFO Empty Status on source CPU
+					src_ipc->cnt &= ~0x1;
 
-				//Set RECVFIFO Not Empty IRQ on NDS7
-				if((nds7_ipc.cnt & 0x400) && (nds9_ipc.fifo.empty())) { nds7_if |= 0x40000; }
+					//Unset RECVFIFO Empty Status on source CPU
+					dst_ipc->cnt &= ~0x100;
 
-				//Push new word to back of FIFO, also save that value in case FIFO is emptied
-				nds9_ipc.fifo.push(nds9_ipc.fifo_incoming);
-				nds9_ipc.fifo_latest = nds9_ipc.fifo_incoming;
-				nds9_ipc.fifo_incoming = 0;
+					//Set RECVFIFO Not Empty IRQ on destination
+					if((dst_ipc->cnt & 0x400) && (src_ipc->fifo.empty())) { *dst_if |= 0x40000; }
 
-				//Set Send FIFO Full Status
-				if(nds9_ipc.fifo.size() == 16)
-				{
-					//Set SNDFIFO FULL Status on NDS9
-					nds9_ipc.cnt |= 0x2;
+					//Push new word to back of FIFO, also save that value in case FIFO is emptied
+					src_ipc->fifo.push(src_ipc->fifo_incoming);
+					src_ipc->fifo_latest = src_ipc->fifo_incoming;
+					src_ipc->fifo_incoming = 0;
 
-					//Set RECVFIFO FULL Status on NDS7
-					nds7_ipc.cnt |= 0x200;
+					//Set Send FIFO Full Status
+					if(src_ipc->fifo.size() == 16)
+					{
+						//Set SNDFIFO FULL Status on source CPU
+						src_ipc->cnt |= 0x2;
+
+						//Set RECVFIFO FULL Status on destination CPU
+						dst_ipc->cnt |= 0x200;
+					}
 				}
 			}
-
-			else if((!access_mode) && (nds7_ipc.cnt & 0x8000))
-			{
-				nds7_ipc.fifo_incoming &= ~0xFF;
-				nds7_ipc.fifo_incoming |= value;
-
-				//FIFO can only hold a maximum of 16 words
-				if(nds7_ipc.fifo.size() == 16)
-				{
-					nds7_ipc.fifo.pop();
-
-					//Set Bit 14 of IPCFIFOCNT to indicate error
-					nds7_ipc.cnt |= 0x4000;
-				}
-
-				else
-				{
-					//Unset Bit 14 of IPCFIFOCNT to indicate no errors
-					nds7_ipc.cnt &= ~0x4000;
-				}
-
-				//Unset SNDFIFO Empty Status on NDS7
-				nds7_ipc.cnt &= ~0x1;
-
-				//Unset RECVFIFO Empty Status on NDS9
-				nds9_ipc.cnt &= ~0x100;
-
-				//Set RECVFIFO Not Empty IRQ on NDS9
-				if((nds9_ipc.cnt & 0x400) && (nds7_ipc.fifo.empty())) { nds9_if |= 0x40000; }
-
-				//Push new word to back of FIFO, also save that value in case FIFO is emptied
-				nds7_ipc.fifo.push(nds7_ipc.fifo_incoming);
-				nds7_ipc.fifo_latest = nds7_ipc.fifo_incoming;
-				nds7_ipc.fifo_incoming = 0;
-
-				//Set Send FIFO Full Status
-				if(nds7_ipc.fifo.size() == 16)
-				{
-					//Set SNDFIFO FULL Status on NDS7
-					nds7_ipc.cnt |= 0x2;
-
-					//Set RECVFIFO FULL Status on NDS9
-					nds9_ipc.cnt |= 0x200;
-				}
-			}	
 
 			break;
 
@@ -6097,7 +5136,7 @@ void NTR_MMU::process_aux_spi_bus()
 
 			//Read from status register
 			case 0x5:
-				nds_aux_spi.data = 0xFF;
+				nds_aux_spi.data = 0x00;
 				nds_aux_spi.state = 0x5;
 				break;
 

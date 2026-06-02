@@ -73,7 +73,7 @@ void NTR_MMU::write_rtc()
 									nds7_rtc.serial_counter = 0;
 									nds7_rtc.data_index = 0;
 									nds7_rtc.state = 0x103;
-									nds7_rtc.read_stat = 1;
+									nds7_rtc.read_stat = 0;
 								}
 
 								//Write 1 byte for control register
@@ -98,7 +98,7 @@ void NTR_MMU::write_rtc()
 									nds7_rtc.serial_counter = 0;
 									nds7_rtc.data_index = 0;
 									nds7_rtc.state = 0x103;
-									nds7_rtc.read_stat = 1;
+									nds7_rtc.read_stat = 0;
 								}
 
 								//Write 1 byte for control register
@@ -122,7 +122,7 @@ void NTR_MMU::write_rtc()
 									nds7_rtc.serial_counter = 0;
 									nds7_rtc.data_index = 0;
 									nds7_rtc.state = 0x103;
-									nds7_rtc.read_stat = 1;
+									nds7_rtc.read_stat = 0;
 									u8 raw_hours = 0;
 
 									//Grab local time
@@ -157,7 +157,7 @@ void NTR_MMU::write_rtc()
 									nds7_rtc.serial_data[4] = util::get_bcd(nds7_rtc.serial_data[4]);
 
 									//AM-PM flag
-									if(current_time->tm_hour >= 12) { nds7_rtc.serial_data[4] |= 0x40; }
+									if(((current_time->tm_hour + config::rtc_offset[2]) % 24) >= 12) { nds7_rtc.serial_data[0] |= 0x40; }
 									
 									//Minutes
 									nds7_rtc.serial_data[5] = current_time->tm_min;
@@ -188,7 +188,7 @@ void NTR_MMU::write_rtc()
 									nds7_rtc.serial_counter = 0;
 									nds7_rtc.data_index = 0;
 									nds7_rtc.state = 0x103;
-									nds7_rtc.read_stat = 1;
+									nds7_rtc.read_stat = 0;
 									u8 raw_hours = 0;
 
 									//Grab local time
@@ -198,12 +198,12 @@ void NTR_MMU::write_rtc()
 									//Hours
 									nds7_rtc.serial_data[0] = current_time->tm_hour;
 									nds7_rtc.serial_data[0] += config::rtc_offset[2];
-									nds7_rtc.serial_data[0] = (nds7_rtc.regs[0] & 0x40) ? (nds7_rtc.serial_data[0] % 24) : (nds7_rtc.serial_data[0] % 12);
+									nds7_rtc.serial_data[0] = (nds7_rtc.regs[0] & 0x2) ? (nds7_rtc.serial_data[0] % 24) : (nds7_rtc.serial_data[0] % 12);
 									raw_hours = nds7_rtc.serial_data[0];
 									nds7_rtc.serial_data[0] = util::get_bcd(nds7_rtc.serial_data[0]);
 
 									//AM-PM flag
-									if(current_time->tm_hour >= 12) { nds7_rtc.serial_data[0] |= 0x40; }
+									if(((current_time->tm_hour + config::rtc_offset[2]) % 24) >= 12) { nds7_rtc.serial_data[0] |= 0x40; }
 	
 									//Minutes
 									nds7_rtc.serial_data[1] = current_time->tm_min;
@@ -238,7 +238,7 @@ void NTR_MMU::write_rtc()
 									nds7_rtc.serial_counter = 0;
 									nds7_rtc.data_index = 0;
 									nds7_rtc.state = 0x103;
-									nds7_rtc.read_stat = 1;
+									nds7_rtc.read_stat = 0;
 								}
 
 								else
@@ -264,7 +264,7 @@ void NTR_MMU::write_rtc()
 									nds7_rtc.serial_counter = 0;
 									nds7_rtc.data_index = 0;
 									nds7_rtc.state = 0x103;
-									nds7_rtc.read_stat = 1;
+									nds7_rtc.read_stat = 0;
 								}
 
 								else
@@ -287,7 +287,7 @@ void NTR_MMU::write_rtc()
 									nds7_rtc.serial_counter = 0;
 									nds7_rtc.data_index = 0;
 									nds7_rtc.state = 0x103;
-									nds7_rtc.read_stat = 1;
+									nds7_rtc.read_stat = 0;
 								}
 
 								else
@@ -310,7 +310,7 @@ void NTR_MMU::write_rtc()
 									nds7_rtc.serial_counter = 0;
 									nds7_rtc.data_index = 0;
 									nds7_rtc.state = 0x103;
-									nds7_rtc.read_stat = 1;
+									nds7_rtc.read_stat = 0;
 								}
 
 								else
@@ -330,10 +330,9 @@ void NTR_MMU::write_rtc()
 
 			break;
 
-		//Wait for SCK=lo to finish read
+		//Wait for SCK=lo to start/finish read
 		case 0x103:
-			if((nds7_rtc.read_stat == 1) && ((nds7_rtc.data & 0x2) == 0)) { nds7_rtc.read_stat = 2; }
-			else if((nds7_rtc.read_stat == 3) && (nds7_rtc.data & 0x2)) { nds7_rtc.read_stat = 1; }
+			if((nds7_rtc.data & 0x2) == 0) { nds7_rtc.read_stat |= 0x1; }
 			break;
 	
 		//Write data from NDS (SCK=lo)
@@ -395,16 +394,16 @@ void NTR_MMU::write_rtc()
 u8 NTR_MMU::read_rtc()
 {
 	//Reply to NDS with data
-	if((nds7_rtc.read_stat >= 2) && (nds7_rtc.state == 0x103))
+	if((nds7_rtc.read_stat & 0x1) && (nds7_rtc.state == 0x103))
 	{
+		nds7_rtc.read_stat &= ~0x1;
+
 		//Set or unset Bit 1 of SIO data depending on the serial data being sent back
 		if(nds7_rtc.serial_data[nds7_rtc.data_index] & 0x1) { memory_map[NDS_RTC] |= 0x1; }
 		else { memory_map[NDS_RTC] &= ~0x1; }
 
 		nds7_rtc.serial_data[nds7_rtc.data_index] >>= 1;
-		if(nds7_rtc.read_stat == 2) { nds7_rtc.serial_counter++; }
-
-		nds7_rtc.read_stat = 3;
+		nds7_rtc.serial_counter++;
 
 		//Once 8-bits have been sent, move onto the next byte in serial data
 		if(nds7_rtc.serial_counter == 8)
@@ -420,6 +419,7 @@ u8 NTR_MMU::read_rtc()
 			}
 		}
 	}
+
 
 	return memory_map[NDS_RTC];
 }

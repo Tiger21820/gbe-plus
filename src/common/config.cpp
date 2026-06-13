@@ -42,6 +42,8 @@ namespace config
 	std::string external_image_file = "";
 	std::string external_data_file = "";
 	std::string raw_barcode = "";
+	std::string ini_file = "";
+	std::string game_ini_file = "";
 	std::vector <std::string> recent_files;
 	std::vector <std::string> cli_args;
 	std::vector <std::string> bin_files;
@@ -674,6 +676,9 @@ void validate_system_type()
 		config::gb_type = SYS_GBC;
 		config::gba_enhance = true;
 	}
+
+	//Set per-game .ini filename once system type has been validated
+	config::game_ini_file = get_game_ini_filename();
 }
 
 /****** Returns the emulated system type from a given filename ******/
@@ -752,6 +757,12 @@ u8 get_system_type_from_file(std::string filename)
 			test_stream.close();
 		}
 	}
+
+	//Set per-game .ini filename once system type has been validated
+	u8 old_type = config::gb_type;
+	config::gb_type = gb_type;
+	config::game_ini_file = get_game_ini_filename();
+	config::gb_type = old_type;
 
 	return gb_type;
 }
@@ -1132,117 +1143,25 @@ void parse_filenames()
 	validate_system_type();
 }
 
-/****** Parse options from the .ini file ******/
-bool parse_ini_file()
+/****** Parse the contents of a file for .ini options ******/
+bool parse_ini_file(std::string filename)
 {
-	//Test for Windows or Portable version first
-	//Always give preference to portable .ini settings on every OS
-	std::ifstream file("gbe.ini", std::ios::in);
-	config::data_path = "./data/";
-
+	std::ifstream file(filename.c_str(), std::ios::in);
 	std::string input_line = "";
 	std::string line_char = "";
 
-	//Clear recent files
-	config::recent_files.clear();
+	//Clear recent files and set up new ini options - gbe.ini ONLY!
+	if(util::get_filename_from_path(filename) == "gbe.ini")
+	{
+		config::recent_files.clear();
+	}
 
-	//Clear existing .ini parameters
+	else
+	{
+		std::cout<<"GBE::Per-game .ini file: " << util::get_filename_from_path(filename) << "\n";
+	}
+
 	std::vector <std::string> ini_opts;
-	ini_opts.clear();
-
-	bool result = true;
-
-	if(!file.is_open())
-	{
-		const char* unix_chr = getenv("HOME");
-		const char* win_chr = getenv("LOCALAPPDATA");
-
-		std::string unix_str = "";
-		std::string win_str = "";
-		std::string last_chr = "";
-
-		//On Linux/Unix, check for given install folder first
-		if(!gbe_info::get_install_folder().empty())
-		{
-			unix_str = gbe_info::get_install_folder();
-		}
-
-		//Otherwise use home directory as the default
-		else if(unix_chr != nullptr)
-		{
-			unix_str = unix_chr;
-		}
-
-		//Windows will *always* use AppData folder
-		if(win_chr != nullptr) { win_str = win_chr; }
-		
-		if((win_str.empty()) && (unix_str.empty()))
-		{
-			std::cout<<"GBE::Error - Could not open gbe.ini configuration file. Check file path or permissions. \n";
-			result = false;
-		}
-
-		bool config_result = false;
-
-		//Test for Linux or Unix install location next
-		if(!unix_str.empty())
-		{
-			//Generate paths using HOME environment variable
-			if(gbe_info::get_install_folder().empty())
-			{
-				last_chr = unix_str[unix_str.length() - 1];
-				config::cfg_path = (last_chr == "/") ? unix_str + ".gbe_plus/" : unix_str + "/.gbe_plus/";
-				config::data_path = config::cfg_path + "data/";
-				unix_str += (last_chr == "/") ? ".gbe_plus/gbe.ini" : "/.gbe_plus/gbe.ini";
-			}
-
-			//Generate paths using gbe_info
-			else
-			{
-				last_chr = unix_str[unix_str.length() - 1];
-				config::cfg_path = (last_chr == "/") ? unix_str : unix_str + "/";
-				config::data_path = config::cfg_path + "data/";
-				unix_str = config::cfg_path + "gbe.ini";
-			}
-
-			file.open(unix_str.c_str(), std::ios::in);
-
-			if(!file.is_open())
-			{
-				std::cout<<"GBE::Error - Could not open gbe.ini configuration file. Check file path or permissions. \n";
-				result = false;
-			}
-		}
-
-		//Test for Windows install location next
-		else if(!win_str.empty())
-		{
-			//Generate paths to home directory if using AppData environment variable
-			last_chr = win_str[win_str.length() - 1];
-			config::cfg_path = (last_chr == "\\") ? win_str + "gbe_plus/" : win_str + "/gbe_plus/";
-			config::data_path = config::cfg_path + "data/";
-			win_str += (last_chr == "\\") ? "gbe_plus/gbe.ini" : "/gbe_plus/gbe.ini";
-
-			file.open(win_str.c_str(), std::ios::in);
-
-			if(!file.is_open())
-			{
-				std::cout<<"GBE::Error - Could not open gbe.ini configuration file. Check file path or permissions. \n";
-				result = false;
-			}
-		}
-	}
-
-	//Generate substitute ini file if necessary
-	if(!result)
-	{
-		result = generate_ini_file();
-		if(!result) { return false; }
-	}
-
-	//After the location of the data directory is known, set path of temporary media file and karaoke file
-	config::temp_media_file = config::data_path + "gbe_plus_temp_media";
-	config::temp_karaoke_file = config::data_path + "gbe_plus_karaoke";
 
 	int touch_zone_counter = 0;
 	u8 temp_cart_type = 0xFF;
@@ -1389,37 +1308,33 @@ bool parse_ini_file()
 		//Fragment shader
 		if(ini_item == "#fragment_shader")
 		{
-			if((x + 1) < size) 
+			parse_ini_str(ini_item, "#fragment_shader", config::fragment_shader, ini_opts, x);
+
+			if(!config::fragment_shader.empty())
 			{
-				ini_item = ini_opts[++x];
-				std::string first_char = "";
-				first_char = ini_item[0];
-				
-				//When left blank, don't parse the next line item
-				if(first_char != "#") { config::fragment_shader = config::data_path + "shaders/" + ini_item; }
-				else { config::fragment_shader = config::data_path + "shaders/fragment.fs"; x--;}
- 
+				config::fragment_shader = config::data_path + "shaders/" + config::fragment_shader;
 			}
 
-			else { config::fragment_shader = config::data_path + "shaders/fragment.fs"; }
+			else
+			{
+				config::fragment_shader = config::data_path + "shaders/fragment.fs";
+			}
 		}
 
 		//Vertex shader
 		if(ini_item == "#vertex_shader")
 		{
-			if((x + 1) < size) 
+			parse_ini_str(ini_item, "#vertex_shader", config::vertex_shader, ini_opts, x);
+
+			if(!config::vertex_shader.empty())
 			{
-				ini_item = ini_opts[++x];
-				std::string first_char = "";
-				first_char = ini_item[0];
-				
-				//When left blank, don't parse the next line item
-				if(first_char != "#") { config::vertex_shader = config::data_path + "shaders/" + ini_item; }
-				else { config::vertex_shader = config::data_path + "shaders/vertex.vs"; x--;}
- 
+				config::vertex_shader = config::data_path + "shaders/" + config::vertex_shader;
 			}
 
-			else { config::vertex_shader = config::data_path + "shaders/vertex.vs"; }
+			else
+			{
+				config::vertex_shader = config::data_path + "shaders/vertex.vs";
+			}
 		}
 
 		//Max FPS
@@ -1511,7 +1426,7 @@ bool parse_ini_file()
 
 			else 
 			{
-				std::cout<<"GBE::Error - Could not parse gbe.ini (#rtc_offset) \n";
+				std::cout<<"GBE::Error - Could not parse .ini (#rtc_offset) \n";
 				return false;
 			}
 		}
@@ -1539,7 +1454,7 @@ bool parse_ini_file()
 
 			else 
 			{
-				std::cout<<"GBE::Error - Could not parse gbe.ini (#dmg_custom_bg_pal) \n";
+				std::cout<<"GBE::Error - Could not parse .ini (#dmg_custom_bg_pal) \n";
 				return false;
 			}
 		}
@@ -1564,7 +1479,7 @@ bool parse_ini_file()
 
 			else 
 			{
-				std::cout<<"GBE::Error - Could not parse gbe.ini (#dmg_custom_bg_pal) \n";
+				std::cout<<"GBE::Error - Could not parse .ini (#dmg_custom_bg_pal) \n";
 				return false;
 			}
 		}
@@ -1579,7 +1494,7 @@ bool parse_ini_file()
 
 			else 
 			{
-				std::cout<<"GBE::Error - Could not parse gbe.ini (#min_custom_color) \n";
+				std::cout<<"GBE::Error - Could not parse .ini (#min_custom_color) \n";
 				return false;
 			}
 		}
@@ -1605,7 +1520,7 @@ bool parse_ini_file()
 
 			else 
 			{
-				std::cout<<"GBE::Error - Could not parse gbe.ini (#gbe_key_controls) \n";
+				std::cout<<"GBE::Error - Could not parse .ini (#gbe_key_controls) \n";
 				return false;
 			}
 		}
@@ -1632,7 +1547,7 @@ bool parse_ini_file()
 
 			else 
 			{
-				std::cout<<"GBE::Error - Could not parse gbe.ini (#gbe_joy_controls) \n";
+				std::cout<<"GBE::Error - Could not parse .ini (#gbe_joy_controls) \n";
 				return false;
 			}
 		}
@@ -1652,7 +1567,7 @@ bool parse_ini_file()
 
 			else 
 			{
-				std::cout<<"GBE::Error - Could not parse gbe.ini (#con_key_controls) \n";
+				std::cout<<"GBE::Error - Could not parse .ini (#con_key_controls) \n";
 				return false;
 			}
 		}
@@ -1672,7 +1587,7 @@ bool parse_ini_file()
 
 			else 
 			{
-				std::cout<<"GBE::Error - Could not parse gbe.ini (#con_joy_controls) \n";
+				std::cout<<"GBE::Error - Could not parse .ini (#con_joy_controls) \n";
 				return false;
 			}
 		}
@@ -1692,7 +1607,7 @@ bool parse_ini_file()
 
 			else
 			{
-				std::cout<<"GBE::Error - Could not parse gbe.ini (#gbe_turbo_button) \n";
+				std::cout<<"GBE::Error - Could not parse .ini (#gbe_turbo_button) \n";
 				return false;
 			}
 		}
@@ -1751,7 +1666,7 @@ bool parse_ini_file()
 
 			else 
 			{
-				std::cout<<"GBE::Error - Could not parse gbe.ini (#hotkeys) \n";
+				std::cout<<"GBE::Error - Could not parse .ini (#hotkeys) \n";
 				return false;
 			}
 		}
@@ -1789,7 +1704,7 @@ bool parse_ini_file()
 
 				else 
 				{
-					std::cout<<"GBE::Error - Could not parse gbe.ini (#nds_touch_zone) \n";
+					std::cout<<"GBE::Error - Could not parse .ini (#nds_touch_zone) \n";
 					return false;
 				}
 			}
@@ -1867,7 +1782,7 @@ bool parse_ini_file()
 				//Value must be in hex format with "0x"
 				if(format != "0x")
 				{
-					std::cout<<"GBE::Error - Could not parse gbe.ini (#mpos_id) \n";
+					std::cout<<"GBE::Error - Could not parse .ini (#mpos_id) \n";
 					return false;
 				}
 
@@ -1876,7 +1791,7 @@ bool parse_ini_file()
 				//Value must not be more than 4 characters long for 16-bit
 				if(id.size() > 4)
 				{
-					std::cout<<"GBE::Error - Could not parse gbe.ini (#mpos_id) \n";
+					std::cout<<"GBE::Error - Could not parse .ini (#mpos_id) \n";
 					return false;
 				}
 
@@ -1885,7 +1800,7 @@ bool parse_ini_file()
 				//Parse the string into hex
 				if(!util::from_hex_str(id, final_id))
 				{
-					std::cout<<"GBE::Error - Could not parse gbe.ini (#mpos_id) \n";
+					std::cout<<"GBE::Error - Could not parse .ini (#mpos_id) \n";
 					return false;
 				}
 
@@ -1894,7 +1809,7 @@ bool parse_ini_file()
 
 			else
 			{
-				std::cout<<"GBE::Error - Could not parse gbe.ini (#mpos_id) \n";
+				std::cout<<"GBE::Error - Could not parse .ini (#mpos_id) \n";
 				return false;
 			}
 		}
@@ -1914,7 +1829,7 @@ bool parse_ini_file()
 				//Parse the string into hex
 				if(!util::from_hex_str(ini_item, steps))
 				{
-					std::cout<<"GBE::Error - Could not parse gbe.ini (#utp_steps) \n";
+					std::cout<<"GBE::Error - Could not parse .ini (#utp_steps) \n";
 					return false;
 				}
 
@@ -1923,7 +1838,7 @@ bool parse_ini_file()
 
 			else
 			{
-				std::cout<<"GBE::Error - Could not parse gbe.ini (#utp_steps) \n";
+				std::cout<<"GBE::Error - Could not parse .ini (#utp_steps) \n";
 				return false;
 			}
 		}
@@ -1956,7 +1871,7 @@ bool parse_ini_file()
 		if(!parse_ini_number(ini_item, "#wave_scanner_level", config::wave_scanner_level, ini_opts, x, 0, 99)) { return false; }
 
 		//Recent files
-		if(ini_item == "#recent_files")
+		if((ini_item == "#recent_files") && (util::get_filename_from_path(filename) == "gbe.ini"))
 		{
 			if((x + 1) < size) 
 			{
@@ -1983,6 +1898,183 @@ bool parse_ini_file()
 		config::cart_type = static_cast<special_cart_types>(temp_cart_type);
 	}
 
+	return true;
+}
+
+/****** Loads .ini options from a specific file ******/
+bool load_ini_file(std::string filename)
+{
+	config::data_path = "./data/";
+	std::string test_name = filename;
+
+	//Check if loading standard .ini or custom per-game one
+	//For per-games, check for portable data folder before looking at install dir
+	if(filename != "gbe.ini")
+	{
+		test_name = config::data_path + "ini/" + filename;
+		if(std::filesystem::exists(test_name)) { filename = test_name; }
+	}
+
+	else
+	{
+		config::ini_file = "gbe.ini";
+	}
+
+	//Test for Windows or Portable version first
+	//Always give preference to portable .ini settings on every OS
+	std::ifstream file(test_name.c_str(), std::ios::in);
+
+	bool result = true;
+
+	if(!file.is_open())
+	{
+		const char* unix_chr = getenv("HOME");
+		const char* win_chr = getenv("LOCALAPPDATA");
+
+		std::string unix_str = "";
+		std::string win_str = "";
+		std::string last_chr = "";
+
+		//On Linux/Unix, check for given install folder first
+		if(!gbe_info::get_install_folder().empty())
+		{
+			unix_str = gbe_info::get_install_folder();
+		}
+
+		//Otherwise use home directory as the default
+		else if(unix_chr != nullptr)
+		{
+			unix_str = unix_chr;
+		}
+
+		//Windows will *always* use AppData folder
+		if(win_chr != nullptr) { win_str = win_chr; }
+		
+		if((win_str.empty()) && (unix_str.empty()))
+		{
+			if(filename == "gbe.ini")
+			{
+				std::cout<<"GBE::Error - Could not open gbe.ini configuration file. Check file path or permissions. \n";
+			}
+
+			result = false;
+		}
+
+		bool config_result = false;
+
+		//Test for Linux or Unix install location next
+		if(!unix_str.empty())
+		{
+			//Generate paths using HOME environment variable
+			if(gbe_info::get_install_folder().empty())
+			{
+				last_chr = unix_str[unix_str.length() - 1];
+				config::cfg_path = (last_chr == "/") ? unix_str + ".gbe_plus/" : unix_str + "/.gbe_plus/";
+				config::data_path = config::cfg_path + "data/";
+
+				//Standard .ini
+				if(filename == "gbe.ini")
+				{
+					unix_str += (last_chr == "/") ? ".gbe_plus/gbe.ini" : "/.gbe_plus/gbe.ini";
+					config::ini_file = unix_str;
+				}
+
+				//Custom .ini file (per-game settings)
+				else
+				{
+					unix_str += (last_chr == "/") ? ".gbe_plus/data/ini/" : "/.gbe_plus/data/ini/";
+					unix_str += filename;
+				}
+			}
+
+			//Generate paths using gbe_info
+			else
+			{
+				last_chr = unix_str[unix_str.length() - 1];
+				config::cfg_path = (last_chr == "/") ? unix_str : unix_str + "/";
+				config::data_path = config::cfg_path + "data/";
+
+				//Standard .ini
+				if(filename == "gbe.ini")
+				{
+					unix_str = config::cfg_path + "gbe.ini";
+					config::ini_file = unix_str;
+				}
+
+				//Custom .ini file (per-game settings)
+				else
+				{
+					unix_str = config::data_path + "ini/" + filename;
+				}
+			}
+
+			file.open(unix_str.c_str(), std::ios::in);
+
+			if(!file.is_open())
+			{
+				if(filename == "gbe.ini")
+				{
+					std::cout<<"GBE::Error - Could not open gbe.ini configuration file. Check file path or permissions. \n";
+				}
+
+				result = false;
+			}
+
+			filename = unix_str;
+		}
+
+		//Test for Windows install location next
+		else if(!win_str.empty())
+		{
+			//Generate paths to home directory if using AppData environment variable
+			last_chr = win_str[win_str.length() - 1];
+			config::cfg_path = (last_chr == "\\") ? win_str + "gbe_plus/" : win_str + "/gbe_plus/";
+			config::data_path = config::cfg_path + "data/";
+
+			//Standard .ini
+			if(filename == "gbe.ini")
+			{
+				win_str += (last_chr == "\\") ? "gbe_plus/gbe.ini" : "/gbe_plus/gbe.ini";
+				config::ini_file = win_str;
+			}
+
+			//Custom .ini file (per-game settings)
+			else
+			{
+				win_str += (last_chr == "\\") ? "gbe_plus/data/ini/" : "/gbe_plus/data/ini/";
+				win_str += filename;
+			}			
+
+			file.open(win_str.c_str(), std::ios::in);
+
+			if(!file.is_open())
+			{
+				if(filename == "gbe.ini")
+				{
+					std::cout<<"GBE::Error - Could not open gbe.ini configuration file. Check file path or permissions. \n";
+				}
+
+				result = false;
+			}
+
+			filename = win_str;
+		}
+	}
+
+	//Generate substitute ini file if necessary
+	if((!result) && (util::get_filename_from_path(filename) == "gbe.ini"))
+	{
+		result = generate_ini_file();
+		if(!result) { return false; }
+	}
+
+	//After the location of the data directory is known, set path of temporary media file and karaoke file
+	config::temp_media_file = config::data_path + "gbe_plus_temp_media";
+	config::temp_karaoke_file = config::data_path + "gbe_plus_karaoke";
+
+	//Parse actual .ini options from a given file once valid data folder is obtained
+	if(!parse_ini_file(filename)) { return false; }
+
 	//Grab firmware hashes - Must be done AFTER a valid data folder is obtained
 	get_firmware_hashes();
 
@@ -1992,10 +2084,7 @@ bool parse_ini_file()
 /****** Save options to the .ini file ******/
 bool save_ini_file()
 {
-	//Test for Windows or Portable version first
-	//Always give preference to portable .ini settings on every OS
-	std::string ini_path = config::cfg_path + "gbe.ini";
-	std::ifstream in_file(ini_path.c_str(), std::ios::in);
+	std::ifstream in_file(config::ini_file.c_str(), std::ios::in);
 
 	std::string input_line = "";
 	std::string line_char = "";
@@ -2495,28 +2584,30 @@ bool save_ini_file()
 		{
 			line_pos = output_count[x];
 
-			if(config::fragment_shader == (config::data_path + "shaders/fragment.fs")) { config::fragment_shader = "fragment.fs"; }
-			else if(config::fragment_shader == (config::data_path + "shaders/2xBR.fs")) { config::fragment_shader = "2xBR.fs"; }
-			else if(config::fragment_shader == (config::data_path + "shaders/4xBR.fs")) { config::fragment_shader = "4xBR.fs"; }
-			else if(config::fragment_shader == (config::data_path + "shaders/8_bit.fs")) { config::fragment_shader = "8_bit.fs"; }
-			else if(config::fragment_shader == (config::data_path + "shaders/bad_bloom.fs")) { config::fragment_shader = "bad_bloom.fs"; }
-			else if(config::fragment_shader == (config::data_path + "shaders/badder_bloom.fs")) { config::fragment_shader = "badder_bloom.fs"; }
-			else if(config::fragment_shader == (config::data_path + "shaders/chrono.fs")) { config::fragment_shader = "chrono.fs"; }
-			else if(config::fragment_shader == (config::data_path + "shaders/dmg_mode.fs")) { config::fragment_shader = "dmg_mode.fs"; }
-			else if(config::fragment_shader == (config::data_path + "shaders/gba_gamma.fs")) { config::fragment_shader = "gba_gamma.fs"; }
-			else if(config::fragment_shader == (config::data_path + "shaders/gbc_gamma.fs")) { config::fragment_shader = "gbc_gamma.fs"; }
-			else if(config::fragment_shader == (config::data_path + "shaders/grayscale.fs")) { config::fragment_shader = "grayscale.fs"; }
-			else if(config::fragment_shader == (config::data_path + "shaders/lcd_mode.fs")) { config::fragment_shader = "lcd_mode.fs"; }
-			else if(config::fragment_shader == (config::data_path + "shaders/pastel.fs")) { config::fragment_shader = "pastel.fs"; }
-			else if(config::fragment_shader == (config::data_path + "shaders/pixelate.fs")) { config::fragment_shader = "pixelate.fs"; }
-			else if(config::fragment_shader == (config::data_path + "shaders/scale2x.fs")) { config::fragment_shader = "scale2x.fs"; }
-			else if(config::fragment_shader == (config::data_path + "shaders/scale3x.fs")) { config::fragment_shader = "scale3x.fs"; }
-			else if(config::fragment_shader == (config::data_path + "shaders/sepia.fs")) { config::fragment_shader = "sepia.fs"; }
-			else if(config::fragment_shader == (config::data_path + "shaders/spotlight.fs")) { config::fragment_shader = "spotlight.fs"; }
-			else if(config::fragment_shader == (config::data_path + "shaders/tv_mode.fs")) { config::fragment_shader = "tv_mode.fs"; }
-			else if(config::fragment_shader == (config::data_path + "shaders/washout.fs")) { config::fragment_shader = "washout.fs"; }
+			std::string shader = "";
 
-			output_lines[line_pos] = "[#fragment_shader:'" + config::fragment_shader + "']";
+			if(config::fragment_shader == (config::data_path + "shaders/fragment.fs")) { shader = "fragment.fs"; }
+			else if(config::fragment_shader == (config::data_path + "shaders/2xBR.fs")) { shader = "2xBR.fs"; }
+			else if(config::fragment_shader == (config::data_path + "shaders/4xBR.fs")) { shader = "4xBR.fs"; }
+			else if(config::fragment_shader == (config::data_path + "shaders/8_bit.fs")) { shader = "8_bit.fs"; }
+			else if(config::fragment_shader == (config::data_path + "shaders/bad_bloom.fs")) { shader = "bad_bloom.fs"; }
+			else if(config::fragment_shader == (config::data_path + "shaders/badder_bloom.fs")) { shader = "badder_bloom.fs"; }
+			else if(config::fragment_shader == (config::data_path + "shaders/chrono.fs")) { shader = "chrono.fs"; }
+			else if(config::fragment_shader == (config::data_path + "shaders/dmg_mode.fs")) { shader = "dmg_mode.fs"; }
+			else if(config::fragment_shader == (config::data_path + "shaders/gba_gamma.fs")) { shader = "gba_gamma.fs"; }
+			else if(config::fragment_shader == (config::data_path + "shaders/gbc_gamma.fs")) { shader = "gbc_gamma.fs"; }
+			else if(config::fragment_shader == (config::data_path + "shaders/grayscale.fs")) { shader = "grayscale.fs"; }
+			else if(config::fragment_shader == (config::data_path + "shaders/lcd_mode.fs")) { shader = "lcd_mode.fs"; }
+			else if(config::fragment_shader == (config::data_path + "shaders/pastel.fs")) { shader = "pastel.fs"; }
+			else if(config::fragment_shader == (config::data_path + "shaders/pixelate.fs")) { shader = "pixelate.fs"; }
+			else if(config::fragment_shader == (config::data_path + "shaders/scale2x.fs")) { shader = "scale2x.fs"; }
+			else if(config::fragment_shader == (config::data_path + "shaders/scale3x.fs")) { shader = "scale3x.fs"; }
+			else if(config::fragment_shader == (config::data_path + "shaders/sepia.fs")) { shader = "sepia.fs"; }
+			else if(config::fragment_shader == (config::data_path + "shaders/spotlight.fs")) { shader = "spotlight.fs"; }
+			else if(config::fragment_shader == (config::data_path + "shaders/tv_mode.fs")) { shader = "tv_mode.fs"; }
+			else if(config::fragment_shader == (config::data_path + "shaders/washout.fs")) { shader = "washout.fs"; }
+
+			output_lines[line_pos] = "[#fragment_shader:'" + shader + "']";
 		}
 
 		//OpenGL Vertex Shader
@@ -2524,10 +2615,12 @@ bool save_ini_file()
 		{
 			line_pos = output_count[x];
 
-			if(config::vertex_shader == (config::data_path + "shaders/vertex.vs")) { config::vertex_shader = "vertex.vs"; }
-			else if(config::vertex_shader == (config::data_path + "shaders/invert_x.vs")) { config::vertex_shader = "invert_x.vs"; }
+			std::string shader = "";
 
-			output_lines[line_pos] = "[#vertex_shader:'" + config::vertex_shader + "']";
+			if(config::vertex_shader == (config::data_path + "shaders/vertex.vs")) { shader = "vertex.vs"; }
+			else if(config::vertex_shader == (config::data_path + "shaders/invert_x.vs")) { shader = "invert_x.vs"; }
+
+			output_lines[line_pos] = "[#vertex_shader:'" + shader + "']";
 		}
 
 		//Max FPS
@@ -2939,7 +3032,7 @@ bool save_ini_file()
 	}
 
 	//Write contents to .ini file
-	std::ofstream out_file(ini_path.c_str(), std::ios::out);
+	std::ofstream out_file(config::ini_file.c_str(), std::ios::out);
 
 	if(!out_file.is_open())
 	{
@@ -3399,6 +3492,138 @@ void get_firmware_hashes()
 	}
 }
 
+/****** Returns a string representing per-game .ini filename in data/ini/ folder ******/
+std::string get_game_ini_filename()
+{
+	std::string result = "";
+	std::ifstream file(config::rom_file.c_str(), std::ios::binary);
+	std::vector<u8> temp_buffer;
+
+	if(!file.is_open()) { return result; }
+
+	u32 file_size = util::get_file_size(config::rom_file);
+	if(!file_size) { return result; }
+
+	temp_buffer.resize(file_size, 0x00);
+	file.read(reinterpret_cast<char*> (&temp_buffer[0]), file_size);
+	
+	//Generate .ini file as system code + "_" + Game Title (from ROM header)
+	switch(config::gb_type)
+	{
+		//All 8-bit Gameboy models are "DMG", regardless if system type is GBC or SGB
+		//For AUTO system type, assume an 8-bit Game Boy
+		//All other systems are tested for explicitly by the validate_system_type()
+		case SYS_AUTO:
+		case SYS_DMG:
+		case SYS_GBC:
+		case SYS_SGB:
+		case SYS_SGB2:
+			result = "DMG_";
+
+			if(file_size >= 0x143)
+			{
+				for(u32 x = 0; x < 16; x++)
+				{
+					u8 chr = temp_buffer[0x134 + x];
+					result += chr;
+				}
+			}
+
+			break;
+		
+		case SYS_GBA:
+			result = "AGB_";
+
+			if(file_size >= 0xB0)
+			{
+				for(u32 x = 0; x < 12; x++)
+				{
+					u8 chr = temp_buffer[0xA0 + x];
+					result += chr;
+				}
+
+				result += "_";
+
+				for(u32 x = 0; x < 4; x++)
+				{
+					u8 chr = temp_buffer[0xAC + x];
+					result += chr;
+				}
+			}
+
+			break;
+
+		case SYS_NDS:
+			result = "NTR_";
+
+			if(file_size >= 0x10)
+			{
+				for(u32 x = 0; x < 12; x++)
+				{
+					u8 chr = temp_buffer[x];
+					result += chr;
+				}
+
+				result += "_";
+
+				for(u32 x = 0; x < 4; x++)
+				{
+					u8 chr = temp_buffer[0x0C + x];
+					result += chr;
+				}
+			}
+
+			break;
+
+		case SYS_MIN:
+			result = "MIN_";
+
+			if(file_size >= 0x21BC)
+			{
+				for(u32 x = 0; x < 12; x++)
+				{
+					u8 chr = temp_buffer[0x21B0 + x];
+					result += chr;
+				}
+
+				result += "_";
+
+				for(u32 x = 0; x < 4; x++)
+				{
+					u8 chr = temp_buffer[0x21AC + x];
+					result += chr;
+				}
+			}
+
+			break;
+	}
+
+	result = util::make_ascii_printable(result);
+
+	//Replace any spaces or dashes with underscores (ASCII)
+	//Replace any slashes with underscores (ASCII)
+	//Convert to uppercase as well
+	for(u32 x = 0; x < result.length(); x++)
+	{
+		u8 chr = result[x];
+
+		if((chr == 0x20) || (chr == 0x2D)
+		|| (chr == 0x2F) || (chr == 0x5C))
+		{
+			result[x] = 0x5F;
+		}
+
+		else if((chr >= 0x61) && (chr <= 0x7A))
+		{
+			result[x] -= 0x20;
+		}
+	}
+
+	result = result + ".ini";
+
+	return result;
+}
+
 /****** Parses .ini string for boolean values ******/
 bool parse_ini_bool(std::string ini_item, std::string search_item, bool &ini_bool, std::vector <std::string> &ini_opts, u32 &ini_pos)
 {
@@ -3416,7 +3641,7 @@ bool parse_ini_bool(std::string ini_item, std::string search_item, bool &ini_boo
 
 		else 
 		{ 
-			std::cout<<"GBE::Error - Could not parse gbe.ini (" << search_item << ") \n";
+			std::cout<<"GBE::Error - Could not parse .ini (" << search_item << ") \n";
 			return false;
 		}
 	}
@@ -3461,7 +3686,7 @@ bool parse_ini_number(std::string ini_item, std::string search_item, u32 &ini_nu
  
 		else 
 		{ 
-			std::cout<<"GBE::Error - Could not parse gbe.ini (" << search_item << ") \n";
+			std::cout<<"GBE::Error - Could not parse .ini (" << search_item << ") \n";
 			return false;
 		}
 	}
@@ -3485,7 +3710,7 @@ bool parse_ini_number(std::string ini_item, std::string search_item, u16 &ini_nu
  
 		else 
 		{ 
-			std::cout<<"GBE::Error - Could not parse gbe.ini (" << search_item << ") \n";
+			std::cout<<"GBE::Error - Could not parse .ini (" << search_item << ") \n";
 			return false;
 		}
 	}
@@ -3509,7 +3734,7 @@ bool parse_ini_number(std::string ini_item, std::string search_item, u8 &ini_num
  
 		else 
 		{ 
-			std::cout<<"GBE::Error - Could not parse gbe.ini (" << search_item << ") \n";
+			std::cout<<"GBE::Error - Could not parse .ini (" << search_item << ") \n";
 			return false;
 		}
 	}
@@ -3533,7 +3758,7 @@ bool parse_ini_number(std::string ini_item, std::string search_item, double &ini
  
 		else 
 		{ 
-			std::cout<<"GBE::Error - Could not parse gbe.ini (" << search_item << ") \n";
+			std::cout<<"GBE::Error - Could not parse .ini (" << search_item << ") \n";
 			return false;
 		}
 	}
@@ -3554,7 +3779,7 @@ bool parse_ini_number(std::string ini_item, std::string search_item, float &ini_
 
 		else 
 		{ 
-			std::cout<<"GBE::Error - Could not parse gbe.ini (" << search_item << ") \n";
+			std::cout<<"GBE::Error - Could not parse .ini (" << search_item << ") \n";
 			return false;
 		}
 	}

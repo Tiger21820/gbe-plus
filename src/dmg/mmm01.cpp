@@ -38,14 +38,14 @@ void DMG_MMU::mmm01_write(u16 address, u8 value)
 		if(bank_mode == 0)
 		{
 			rom_bank &= 0xFF;
-			rom_bank |= ((value & 0x1F) << 8);
+			rom_bank |= ((value & 0x3F) << 8);
 		}
 
 		//For convenience (save state compatibility) lower 8-bits is ROM bank
 		else
 		{
 			rom_bank &= 0xFF00;
-			rom_bank |= (value & 0x1F);
+			rom_bank |= (value & 0x3F);
 		}
 	}
 

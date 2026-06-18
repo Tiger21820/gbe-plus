@@ -335,9 +335,12 @@ void NTR_LCD::reset()
 	}
 
 	//OBJ affine parameters
+	//Misc. window stuff
 	for(int x = 0; x < 256; x++)
 	{
 		lcd_stat.obj_affine[x] = 0.0;
+		lcd_stat.window_id_a[x] = false;
+		lcd_stat.window_id_b[x] = false;
 	}
 
 	//VRAM blocks

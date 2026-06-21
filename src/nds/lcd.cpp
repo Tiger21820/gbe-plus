@@ -1465,11 +1465,18 @@ void NTR_LCD::render_obj_scanline(u32 bg_control)
 		//Determine whether or not extended palettes are necessary
 		ext_pal = false;
 
-		if((!engine_id) && (lcd_stat.ext_pal_a & 0x2) && (obj[obj_id].bit_depth == 8)) { ext_pal = true; }
-		else if((engine_id) && (lcd_stat.ext_pal_b & 0x2) && (obj[obj_id].bit_depth == 8)) { ext_pal = true; }
+		if((!engine_id) && (lcd_stat.ext_pal_a & 0x2)) { ext_pal = true; }
+		else if((engine_id) && (lcd_stat.ext_pal_b & 0x2)) { ext_pal = true; }
 
-		pal_id = (ext_pal) ? (obj[obj_id].palette_number << 8) : (obj[obj_id].palette_number << 4);
-		if(obj[obj_id].bit_depth == 8) { pal_id = 0; }
+		if(obj[obj_id].bit_depth == 8)
+		{
+			pal_id = (ext_pal) ? (obj[obj_id].palette_number << 8) : 0;
+		}
+
+		else
+		{
+			pal_id = (ext_pal) ? (obj[obj_id].palette_number << 8) : (obj[obj_id].palette_number << 4);
+		}
 		
 		//Check to see if OBJ is even onscreen
 		if((obj[obj_id].left < 256) || (obj[obj_id].right < 256))

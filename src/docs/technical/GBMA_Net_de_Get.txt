@@ -1,5 +1,5 @@
 Net de Get GB Mobile Adapter Server Technical Documentation 0.4
-June 9, 2026
+June 22, 2026
 Shonumi aka D.S. Baxter, OtherLiz
 
 ***************************************************
@@ -126,7 +126,6 @@ Minigame Type
 0x04				::	Red Square (A)		アペンド		Additional minigame data.
 0x08				::	Brown Square (S)	???		???
 
-
 ***************************************************
 6. cgb/download?name=/A4/CGB-BMVJ/*
 ***************************************************
@@ -144,6 +143,7 @@ Note that the filename of the minigame should start with numbers (the price) sin
 
 Rather than simply downloading the minigame data as-is, Net de Get expects minigames to have come in a sort of wrapper file. This consists of a brief header followed by the actual minigame data as described in the next section below. The wrapper header is as follows:
 
+----------------------------------
 0x00				::	String length for the comment.
 0x01 - Length			::	Comment (unused).
 Length + 0x01			::	Number of blocks? Unused.
@@ -158,40 +158,48 @@ Length + 0x09 ...		::	Compressed minigame data.
 
 The minigame data is compressed in a proprietary format involving several Huffman trees. These trees are in canonical format; that is, codes with fewer bits will be less than codes with more bits when interpreted as binary numbers, as will codes with the same number of bits representing lesser character numbers. Additionally, the compressed format uses fields of various bit sizes. These fields are packed together in big-endian order with no padding or spacing between them, even between separate compressed chunks.
 
-----------------------------------
+--------------------------------------------------
 Compressed Chunk Format
-----------------------------------
-16 bits				::	Number of data symbols.
-5 bits				::	Highest character number in auxiliary tree A + 1. Must be 1-19.
-For each character, starting at #0:
-	3+ bits			::	Bit length of code for this character. A length of zero indicates that this character is not present in the tree. If the first three bits are ones, the game will continue reading bits until it reaches a zero, and the actual bit length will be the total number of one bits + 4, which must be 16 or less.
-	After character #2 (even if it is the highest character):
-		2 bits		::	Number of characters to skip here (i.e. the next character number is this value + 3).
-9 bits				::	Highest character number in data tree + 1. Must be 0-262.
-If the above field is 0:
-	9 bits			::	Constant character number for data tree. Must be 0-261. Data characters will take zero bits, and will all be the character specified here.
-Otherwise, for each character, starting at #0:
-	Aux. tree A character	::	Character #0 indicates that this character is not present in the tree, character #1 indicates that this and 2-17 characters after it are not present, and character #2 indicates that this and 19+ characters after it are not present. Higher character numbers indicate the bit length of this character's code + 2.
-	After auxiliary character #1:
-		4 bits		::	Number of characters to skip - 3.
-	After auxiliary character #2:
-		9 bits		::	Number of characters to skip - 20.
-4 bits				::	Highest character in auxiliary tree B + 1. Must be 1-10.
-For each character, starting at #0:
-	3+ bits			::	Bit length of code for this character. See auxiliary tree A for details.
-For each data symbol:
-	Data tree character	::	Characters #0-#255 copy raw bytes to the output stream. Higher character numbers indicate a number of bytes to copy from earlier output + 253. It is possible to copy data from a previous chunk.
-	After character #256+:
-		Aux tree B char	::	Character #0 indicates that the previous output character should simply be repeated. Higher character numbers indicate the highest set bit of the offset + 1.
-		0+ bits		::	The remaining bits of the offset.
+--------------------------------------------------
+16 bits						::	Number of data symbols.
+5 bits						::	Highest character number in auxiliary tree A + 1. Must be 1-19.
+For each character, starting at #0:		::
+	3+ bits					::	Bit length of code for this character. A length of zero indicates that this character is not present in the tree. 
+						::	If the first three bits are ones, the game will continue reading bits until it reaches a zero, and the actual bit
+						::	length will be the total number of one bits + 4, which must be 16 or less.
+	After character #2			::
+	(even if it is the highest character):	::
+		2 bits				::	Number of characters to skip here (i.e. the next character number is this value + 3).
+9 bits						::	Highest character number in data tree + 1. Must be 0-262.
+If the above field is 0:			::
+	9 bits					::	Constant character number for data tree. Must be 0-261. Data characters will take zero bits, and will all be the 
+						::	character specified here.
+Otherwise, for each character, starting at #0:	::
+	Aux. tree A character			::	Character #0 indicates that this character is not present in the tree, character #1 indicates that this and 2-17 
+						::	characters after it are not present, and character #2 indicates that this and 19+ characters after it are not present.
+						::	Higher character numbers indicate the bit length of this character's code + 2.
+	After auxiliary character #1:		::
+		4 bits				::	Number of characters to skip - 3.
+	After auxiliary character #2:		::
+		9 bits				::	Number of characters to skip - 20.
+4 bits						::	Highest character in auxiliary tree B + 1. Must be 1-10.
+For each character, starting at #0:		::
+	3+ bits					::	Bit length of code for this character. See auxiliary tree A for details.
+For each data symbol:				::
+	Data tree character			::	Characters #0-#255 copy raw bytes to the output stream. Higher character numbers indicate a number of bytes to copy from
+						::	earlier output + 253. It is possible to copy data from a previous chunk.
+	After character #256+:			::
+		Aux tree B char			::	Character #0 indicates that the previous output character should simply be repeated. Higher character numbers indicate
+						::	the highest set bit of the offset + 1.
+		0+ bits				::	The remaining bits of the offset.
 
 The decompressed data of every chunk is concatenated, again with no padding, to form the total decompressed data. This is what gets written to flash, padded with 0x00 to a multiple of 4KB, then (if necessary) padded with 0xFF to a multiple of 8KB.
 
 With compression disabled, the data is written in chunks of 512 bytes each (except the last, which may or may not be shorter). The chunks are concatenated and padded in the same way as if compression were enabled. Each chunk has 256 bytes of extra data after it, with a footer starting at offset 0x200. Up to 256 bytes of the last footer (stopping if 0xFF is encountered) is saved to the player's minigame organization, which is simply a series of byte pairs in the following format:
 
+----------------------------------
 0x00				::	Minigame number. 0x00-0x0E indicate one of the 15 games that come with Net de Get, in their default order. 0x10-0x8F indicate the first bank of a flash minigame + 0x10. 0xFF terminates the list.
 0x01				::	Box number (0x00-0x06). Entries with invalid box numbers are ignored.
-
 
 ***************************************************
 8. Minigame Format
@@ -199,6 +207,7 @@ With compression disabled, the data is written in chunks of 512 bytes each (exce
 
 The minigame format is essentially the same as that found on the MBC6 ROM. Using the base address of the flash ROM bank, minigames look like so:
 
+----------------------------------
 0x00 - 0x02			::	Typically contains a JR or JP instuction.
 0x03 - 0x04			::	Size of this header (little-endian). Always 0x6F.
 0x05 				::	Number of memory blocks used by the minigame.
@@ -210,10 +219,12 @@ The minigame format is essentially the same as that found on the MBC6 ROM. Using
 0x24 - ...			::	Text for dialog box. Null terminated.
 0x44				::	Must be 0xFF for the minigame to be considered valid.
 0x4D - 0x6C			::	Append data. Format depends on the append ID and the minigame being appended.
-0x6D - 0x6E			::	Sum of all the other bytes of this minigame including any padding bytes (little-endian); or 0x3B, 0xB3 to bypass checksum verification altogether. If the minigame is larger than 56KB (7 banks), the sum is only of the first 256 bytesw
+0x6D - 0x6E			::	Sum of all the other bytes of this minigame (little-endian).
 0x6F - ...			::	Code + Data.
 
 Generally, the jump instruction goes right to Byte 0x6F, but not always. When the minigame is selected from the menu and the play (あそぶ) option is selected, the MBC6 switches Bank 0 (0x4000 - 0x5FFF) with flash ROM, then performs a CALL 0x4000, which in turn executes the jump instruction and starts the minigame. It should also be noted that the downloaded minigame code is actually executed from flash ROM rather than copying it somewhere else first like WRAM.
+
+The checksum stored in bytes 0x6D - 0x6E includes any padding bytes. Using values of 0x3B or 0xB3 bypasses checksum verification altogether. If the minigame is larger than 56KB (7 banks), the sum is only of the first 256 bytes.
 
 There are some additional minigame type icons here compared to RomList.cgb:
 
@@ -252,6 +263,7 @@ For the category icon, everything above 0x08 results in garbage tile data being 
 
 The final minigame in the default order, とんではねてそろえて, allows the player to choose any of 3 built-in images to play a 6x4 slide puzzle. It also allows additional images to be downloaded in the form of minigames with the append ID 0x05, 0x00 in the header. The append data in the header is not used; instead, the first bank of such a minigame should contain image data in the following format:
 
+----------------------------------
 0x00A0 - 0x00D7			::	Background palettes 0-6, used only for the puzzle tiles.
 0x00D8 - 0x00DF			::	Background palette 7, used for the border and timer.
 0x00E0 - 0x00EF			::	Object palettes 0-1, unused.
@@ -285,6 +297,7 @@ The 3 built-in images have the same colors for background palette 7 and for all 
 
 The third game in the default order, ごろうのロ—プパズル, is a puzzle game with 16 stages. It checks for downloaded games with the append ID 0x01, 0x00 in the header, and contains code to load 16 extra stages from the first one it finds, but this code goes unused. It expects the append data in the header to begin with a pointer to 1472 bytes of data in the first bank of the minigame, in the following format:
 
+----------------------------------
 0x00 - 0x01			::	Offset to stage 01 data (little-endian).
 0x02 - 0x03			::	Offset to stage 02 data (little-endian).
 0x04 - 0x1F			::	Offsets to stage 03-16 data.
@@ -307,24 +320,25 @@ Tile Type
 
 Blank entries represent values that are not used and can effectively be treated as spaces, although the base game consistently uses 0x10 for a space.
 
-        0    1    2    3    4    5    6    7    8    9    A    B    C    D    E    F
-0x10         !    "    #    $    %    &    '    (    )    *    +    ‘    -    .    /
-0x20    0    1    2    3    4    5    6    7    8    9    :    ;    <    =    >    ?
-0x30    [    ¥    ]    x    ÷    {    |    }    ˜    @    ⌜    ⌟    —    ~    、    。
-0x40         A    B    C    D    E    F    G    H    I    J    K    L    M    N    O
-0x50    P    Q    R    S    T    U    V    W    X    Y    Z    ✜    ‥    ^    _    ’
-0x60         a    b    c    d    e    f    g    h    i    j    k    l    m    n    o
-0x70    p    q    r    s    t    u    v    w    x    y    z    Ⓐ    Ⓑ
+	0	1	2	3	4	5	6	7	8	9	A	B	C	D	E	F
+0x00
+0x10		!	"	#	$	%	&	'	(	)	*	+	‘	-	.	/
+0x20	0	1	2	3	4	5	6	7	8	9	:	;	<	=	>	?
+0x30	[	¥	]	x	÷	{	|	}	˜	@	⌜	⌟	—	~	、	。
+0x40		A	B	C	D	E	F	G	H	I	J	K	L	M	N	O
+0x50	P	Q	R	S	T	U	V	W	X	Y	Z	✜	‥	^	_	’
+0x60		a	b	c	d	e	f	g	h	i	j	k	l	m	n	o
+0x70	p	q	r	s	t	u	v	w	x	y	z	Ⓐ	Ⓑ
 
 
-0x80    ぁ    あ    ぃ    い    ぅ    う    ぇ    え    ぉ    お    か    き    く    け    こ    さ        
-0x90    し    す    せ    そ    た    ち    っ    つ    て    と    な    に    ぬ    ね    の    は
-0xA0    ひ    ふ    へ    ほ    ま    み    む    め    も    ゃ    や    ゅ    ゆ    ょ    よ    ら
-0xB0    り    る    れ    ろ    ゎ    わ    を    ん    →    ←    ↑    ↓    •
-0xC0    ァ    ア    ィ    イ    ゥ    ウ    ェ    エ    ォ    オ    カ    キ    ク    ケ    コ    サ
-0xD0    シ    ス    セ    ン    タ    チ    ッ    ツ    テ    ト    ナ    ニ    ヌ    ネ    ノ    ハ      
-0xE0    ヒ    フ    ヘ    ホ    マ    ミ    ム    メ    モ    ャ    ヤ    ュ    ユ    ョ    ヨ    ラ 
-0xF0    リ    ル 	   レ    ロ    ヮ    ワ    ヲ    ン    ☎    ♪    ☺    ☺    ★    ❤     ﾞ     ﾟ
+0x80	ぁ	あ	ぃ	い	ぅ	う	ぇ	え	ぉ	お	か	き	く	け	こ	さ
+0x90	し	す	せ	そ	た	ち	っ	つ	て	と	な	に	ぬ	ね	の	は
+0xA0	ひ	ふ	へ	ほ	ま	み	む	め	も	ゃ	や	ゅ	ゆ	ょ	よ	ら
+0xB0	り	る	れ	ろ	ゎ	わ	を	ん	→	←	↑	↓	•
+0xC0	ァ	ア	ィ	イ	ゥ	ウ	ェ	エ	ォ	オ	カ	キ	ク	ケ	コ	サ
+0xD0	シ	ス	セ	ン	タ	チ	ッ	ツ	テ	ト	ナ	ニ	ヌ	ネ	ノ	ハ	  
+0xE0	ヒ	フ	ヘ	ホ	マ	ミ	ム	メ	モ	ャ	ヤ	ュ	ユ	ョ	ヨ	ラ 
+0xF0	リ	ル	レ	ロ	ヮ	ワ	ヲ	ン	☎	♪	☺	☺	★	❤	 ﾞ	 ﾟ
 
 A couple of things to note, since some characters listed are not quite the same in Unicode as they are on Net de Get:
 

@@ -335,9 +335,12 @@ void NTR_LCD::reset()
 	}
 
 	//OBJ affine parameters
+	//Misc. window stuff
 	for(int x = 0; x < 256; x++)
 	{
 		lcd_stat.obj_affine[x] = 0.0;
+		lcd_stat.window_id_a[x] = false;
+		lcd_stat.window_id_b[x] = false;
 	}
 
 	//VRAM blocks
@@ -1460,16 +1463,20 @@ void NTR_LCD::render_obj_scanline(u32 bg_control)
 		obj_id = engine_id ? obj_render_list_b[x] : obj_render_list_a[x];
 
 		//Determine whether or not extended palettes are necessary
-		if((!engine_id) && (lcd_stat.ext_pal_a & 0x2) && (obj[obj_id].bit_depth == 8)) { ext_pal = true; }
-		else if((engine_id) && (lcd_stat.ext_pal_b & 0x2) && (obj[obj_id].bit_depth == 8)) { ext_pal = true; }
-		
-		else
+		ext_pal = false;
+
+		if((!engine_id) && (lcd_stat.ext_pal_a & 0x2)) { ext_pal = true; }
+		else if((engine_id) && (lcd_stat.ext_pal_b & 0x2)) { ext_pal = true; }
+
+		if(obj[obj_id].bit_depth == 8)
 		{
-			ext_pal = false;
-			if(obj[obj_id].bit_depth == 8) { pal_id = 0; }
+			pal_id = (ext_pal) ? (obj[obj_id].palette_number << 8) : 0;
 		}
 
-		pal_id = (ext_pal) ? (obj[obj_id].palette_number << 8) : (obj[obj_id].palette_number << 4);
+		else
+		{
+			pal_id = (ext_pal) ? (obj[obj_id].palette_number << 8) : (obj[obj_id].palette_number << 4);
+		}
 		
 		//Check to see if OBJ is even onscreen
 		if((obj[obj_id].left < 256) || (obj[obj_id].right < 256))

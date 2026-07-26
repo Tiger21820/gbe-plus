@@ -959,13 +959,9 @@ void ARM7::update_condition_logical(u32 result, u8 shift_out)
 }
 
 /****** Updates the condition codes in the CPSR register after arithmetic operations ******/
-void ARM7::update_condition_arithmetic(u32 input, u64 operand, u32 result, bool addition)
+void ARM7::update_condition_arithmetic(u32 input, u32 operand, u32 result, bool addition, s64 carry_op)
 {
-	if(operand == 0x100000001)
-	{
-		addition = true;
-		operand = 1;
-	}
+	u64 ext_operand = operand + carry_op;
 
 	//Negative flag
 	if(result & 0x80000000) { reg.cpsr |= CPSR_N_FLAG; }
@@ -978,14 +974,14 @@ void ARM7::update_condition_arithmetic(u32 input, u64 operand, u32 result, bool 
 	//Carry flag - Addition
 	if(addition)
 	{
-		if(operand > (0xFFFFFFFF - input)) { reg.cpsr |= CPSR_C_FLAG; }
+		if(ext_operand > (0xFFFFFFFF - input)) { reg.cpsr |= CPSR_C_FLAG; }
 		else { reg.cpsr &= ~CPSR_C_FLAG; }
 	}
 
 	//Carry flag - Subtraction
 	else if(!addition)
 	{
-		if(operand > input) { reg.cpsr &= ~CPSR_C_FLAG; }
+		if(ext_operand > input) { reg.cpsr &= ~CPSR_C_FLAG; }
 		else { reg.cpsr |= CPSR_C_FLAG; }
 	}
 
@@ -996,24 +992,14 @@ void ARM7::update_condition_arithmetic(u32 input, u64 operand, u32 result, bool 
 
 	if(addition)
 	{
-		if(input_msb != operand_msb) { reg.cpsr &= ~CPSR_V_FLAG; }
-		
-		else
-		{
-			if((result_msb == input_msb) && (result_msb == operand_msb)) { reg.cpsr &= ~CPSR_V_FLAG; }
-			else { reg.cpsr |= CPSR_V_FLAG; }
-		}
+		if((input_msb == operand_msb) && (input_msb != result_msb)) { reg.cpsr |= CPSR_V_FLAG; }
+		else { reg.cpsr &= ~CPSR_V_FLAG; }
 	}
 
 	else
 	{
-		if(input_msb == operand_msb) { reg.cpsr &= ~CPSR_V_FLAG; }
-		
-		else
-		{
-			if(result_msb == operand_msb) { reg.cpsr |= CPSR_V_FLAG; }
-			else { reg.cpsr &= ~CPSR_V_FLAG; }
-		}
+		if((input_msb != operand_msb) && (input_msb != result_msb)) { reg.cpsr |= CPSR_V_FLAG; }
+		else { reg.cpsr &= ~CPSR_V_FLAG; }
 	}
 }
 

@@ -12,6 +12,7 @@
 #include <cmath>
 
 #include "apu.h"
+#include "common/util.h"
 
 /****** APU Constructor ******/
 NTR_APU::NTR_APU()
@@ -43,6 +44,7 @@ void NTR_APU::reset()
 	for(int x = 0; x < 16; x++)
 	{
 		apu_stat.channel[x].output_frequency = 0.0;
+		apu_stat.channel[x].play_src = 0;
 		apu_stat.channel[x].data_src = 0;
 		apu_stat.channel[x].data_pos = 0;
 		apu_stat.channel[x].loop_start = 0;
@@ -51,6 +53,8 @@ void NTR_APU::reset()
 		apu_stat.channel[x].cnt = 0;
 		apu_stat.channel[x].timer = 0;
 		apu_stat.channel[x].volume = 0;
+		apu_stat.channel[x].pan = 0;
+		apu_stat.channel[x].format = 0;
 
 		apu_stat.channel[x].playing = false;
 		apu_stat.channel[x].enable = false;
@@ -132,7 +136,6 @@ void NTR_APU::generate_channel_samples(s32* stream, int length, u8 id)
 {
 	double sample_ratio = (apu_stat.channel[id].output_frequency / apu_stat.sample_rate);
 	u32 sample_pos = apu_stat.channel[id].data_pos;
-	u8 format = ((apu_stat.channel[id].cnt >> 29) & 0x3);
 	u8 loop_mode = ((apu_stat.channel[id].cnt >> 27) & 0x3);
 
 	//Calculate volume
@@ -154,26 +157,20 @@ void NTR_APU::generate_channel_samples(s32* stream, int length, u8 id)
 		if((apu_stat.channel[id].samples) && (apu_stat.channel[id].playing))
 		{
 			//PCM8
-			if(format == 0)
+			if(apu_stat.channel[id].format == 0)
 			{
 				u32 data_addr = (sample_pos + (sample_ratio * x));
 				nds_sample_8 = mem->memory_map[sample_pos + (sample_ratio * x)];
 
 				//Scale S8 audio to S16
-				stream[x] += (nds_sample_8 * 256);
+				stream[x] += ((nds_sample_8 * 256) * vol);
 
-				//Adjust volume level
-				stream[x] *= vol;
-
-				if(data_addr >= (apu_stat.channel[id].data_src + apu_stat.channel[id].samples))
+				if(data_addr >= (apu_stat.channel[id].play_src + apu_stat.channel[id].samples))
 				{
 					//Loop sound
 					if(loop_mode == 1)
 					{
-						u32 src_addr = mem->read_u32_fast(NDS_SOUNDXSAD | (id << 4)) & 0x7FFFFFF;
-						apu_stat.channel[id].data_src = src_addr + (apu_stat.channel[id].loop_start * 4);
-						apu_stat.channel[id].data_pos = apu_stat.channel[id].data_src;
-						apu_stat.channel[id].samples = (apu_stat.channel[id].length * 4);
+						apu_stat.channel[id].data_pos = apu_stat.channel[id].play_src + (apu_stat.channel[id].loop_start * 4);
 					}
 					
 					//Stop sound
@@ -186,26 +183,20 @@ void NTR_APU::generate_channel_samples(s32* stream, int length, u8 id)
 			}
 
 			//PCM16
-			else if(format == 1)
+			else if(apu_stat.channel[id].format == 1)
 			{
 				u32 data_addr = (sample_pos + (sample_ratio * x));
 				data_addr &= ~0x1;
 				nds_sample_16 = mem->read_u16_fast(data_addr);
 
-				stream[x] += nds_sample_16;
+				stream[x] += (nds_sample_16 * vol);
 
-				//Adjust volume level
-				stream[x] *= vol;
-
-				if(data_addr >= (apu_stat.channel[id].data_src + apu_stat.channel[id].samples))
+				if(data_addr >= (apu_stat.channel[id].play_src + apu_stat.channel[id].samples))
 				{
 					//Loop sound
 					if(loop_mode == 1)
 					{
-						u32 src_addr = mem->read_u32_fast(NDS_SOUNDXSAD | (id << 4)) & 0x7FFFFFF;
-						apu_stat.channel[id].data_src = src_addr + (apu_stat.channel[id].loop_start * 2);
-						apu_stat.channel[id].data_pos = apu_stat.channel[id].data_src;
-						apu_stat.channel[id].samples = (apu_stat.channel[id].length * 2);
+						apu_stat.channel[id].data_pos = apu_stat.channel[id].play_src + (apu_stat.channel[id].loop_start * 4);
 					}
 					
 					//Stop sound
@@ -218,23 +209,20 @@ void NTR_APU::generate_channel_samples(s32* stream, int length, u8 id)
 			}
 
 			//IMA-ADPCM
-			else if(format == 2)
+			else if(apu_stat.channel[id].format == 2)
 			{
 				u32 data_pos = (apu_stat.channel[id].adpcm_pos + (sample_ratio * x));
 				if(data_pos > apu_stat.channel[id].adpcm_buffer.size()) { data_pos = (apu_stat.channel[id].adpcm_buffer.size() - 1); }
 				nds_sample_16 = apu_stat.channel[id].adpcm_buffer[data_pos];
 
-				stream[x] += nds_sample_16;
-
-				//Adjust volume level
-				stream[x] *= vol;
+				stream[x] += (nds_sample_16 * vol);
 
 				if(data_pos >= apu_stat.channel[id].samples)
 				{
 					//Loop sound
 					if(loop_mode == 1)
 					{
-						apu_stat.channel[id].data_pos = apu_stat.channel[id].data_src;
+						apu_stat.channel[id].adpcm_pos = (apu_stat.channel[id].loop_start * 8);
 						apu_stat.channel[id].samples = ((apu_stat.channel[id].length - 1) * 8);
 					}
 
@@ -258,7 +246,7 @@ void NTR_APU::generate_channel_samples(s32* stream, int length, u8 id)
 	}
 
 	//Advance data pointer to sound samples
-	switch(format)
+	switch(apu_stat.channel[id].format)
 	{
 		case 0x0:
 			apu_stat.channel[id].data_pos += (sample_ratio * samples_played);
@@ -289,17 +277,19 @@ void NTR_APU::decode_adpcm_samples(u8 id)
 	s32 high_result, low_result = 0;
 	s16 next_index;
 
+	u32 adpcm_addr = apu_stat.channel[id].data_src + 4;
+
 	//Decode IMA-ADPCM from memory
 	while(current_pos < apu_stat.channel[id].samples)
 	{
 		//Verify data read address first
-		if((apu_stat.channel[id].data_src + (current_pos >> 1)) >= 0x10000000) { return; }
+		if((adpcm_addr + (current_pos >> 1)) >= 0x10000000) { return; }
 
 		//Grab data from memory, 1 byte at a time for every 2 samples
 		//Also determine if current sample uses upper or lower half of byte from memory
 		if((current_pos & 0x1) == 0)
 		{
-			full_byte = mem->memory_map[apu_stat.channel[id].data_src + (current_pos >> 1)];
+			full_byte = mem->memory_map[adpcm_addr + (current_pos >> 1)];
 			half_byte = (full_byte & 0xF);
 		}
 
@@ -312,14 +302,14 @@ void NTR_APU::decode_adpcm_samples(u8 id)
 		if(half_byte & 0x2) { diff += (apu_stat.adpcm_table[apu_stat.channel[id].adpcm_index] / 2); }
 		if(half_byte & 0x4) { diff += apu_stat.adpcm_table[apu_stat.channel[id].adpcm_index]; }
 
-		high_result = apu_stat.channel[id].adpcm_val + diff;
+		high_result = s16(apu_stat.channel[id].adpcm_val) + diff;
 		if(high_result > 32767) { high_result = 32767; }
 
-		low_result = apu_stat.channel[id].adpcm_val - diff;
+		low_result = s16(apu_stat.channel[id].adpcm_val) - diff;
 		if(low_result < -32768) { low_result = -32768; }
 
-		if(half_byte & 0x8) { apu_stat.channel[id].adpcm_val = high_result; }
-		else { apu_stat.channel[id].adpcm_val = low_result; }
+		if(half_byte & 0x8) { apu_stat.channel[id].adpcm_val = low_result; }
+		else { apu_stat.channel[id].adpcm_val = high_result; }
 
 		//Calculate next index
 		next_index = apu_stat.channel[id].adpcm_index + apu_stat.index_table[half_byte & 0x7];

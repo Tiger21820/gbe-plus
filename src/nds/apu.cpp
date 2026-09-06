@@ -86,12 +86,22 @@ void NTR_APU::reset()
 	apu_stat.index_table[6] = 6;
 	apu_stat.index_table[7] = 8;
 
-	apu_stat.mic_out = 0;
+	mic_buffer.clear();
+	apu_stat.mic.output = 0;
+	apu_stat.mic.id = 0;
+	apu_stat.mic.init = false;
+	apu_stat.mic.is_on = false;
+	apu_stat.mic.frequency = 44100.0;
+	apu_stat.mic.poll_rate = 0;
+	apu_stat.mic.estimated_sample_rate = 0;
+	apu_stat.mic.sample_index = 0;
 }
 
 /****** Initialize APU with SDL ******/
 bool NTR_APU::init()
 {
+	bool init_status = false;
+
 	//Override SDL audio driver if necessary
 	if(!config::override_audio_driver.empty())
 	{
@@ -109,7 +119,7 @@ bool NTR_APU::init()
 	//Setup the desired audio specifications
     	desired_spec.freq = apu_stat.sample_rate;
 	desired_spec.format = AUDIO_S16SYS;
-    	desired_spec.channels = 1;
+	desired_spec.channels = (config::use_stereo) ? 2 : 1;
     	desired_spec.samples = (config::sample_size) ? config::sample_size : 4096;
     	desired_spec.callback = ntr_audio_callback;
     	desired_spec.userdata = this;
@@ -118,7 +128,7 @@ bool NTR_APU::init()
 	if(SDL_OpenAudio(&desired_spec, nullptr) < 0) 
 	{ 
 		std::cout<<"APU::Failed to open audio\n";
-		return false; 
+		init_status = false;
 	}
 
 	else
@@ -126,9 +136,68 @@ bool NTR_APU::init()
 		apu_stat.channel_master_volume = config::volume;
 
 		SDL_PauseAudio(0);
+		init_status = true;
 		std::cout<<"APU::Initialized\n";
-		return true;
 	}
+
+	//Open microphone if enabled and if possible
+	if(config::use_microphone)
+	{
+		SDL_AudioSpec final_spec;
+		SDL_AudioDeviceID mic_id = 0;
+
+		s32 max_devices = SDL_GetNumAudioDevices(1);
+		if(max_devices < 0) { max_devices = 0; }
+
+		//Setup the desired audio specifications
+    		microphone_spec.freq = apu_stat.sample_rate;
+		microphone_spec.format = AUDIO_S16SYS;
+    		microphone_spec.channels = 1;
+    		microphone_spec.samples = (config::sample_size) ? config::sample_size : 1024;
+    		microphone_spec.callback = ntr_microphone_callback;
+    		microphone_spec.userdata = this;
+
+		for(u32 x = 0; x < max_devices; x++)
+		{
+			//Open recording device
+			mic_id = SDL_OpenAudioDevice(SDL_GetAudioDeviceName(x, 1), 1, &microphone_spec, &final_spec, SDL_AUDIO_ALLOW_FORMAT_CHANGE);
+
+			if(mic_id != 0)
+			{
+				if((!config::microphone_id) || (config::microphone_id == mic_id))
+				{
+					if(final_spec.format != AUDIO_S16SYS)
+					{
+						std::cout<<"APU::Microphone Recording Device - #" << std::dec << mic_id << " does not support S16 audio\n";
+					}
+
+					else if(final_spec.channels != 1)
+					{
+						std::cout<<"APU::Microphone Recording Device - #" << std::dec << mic_id << " does not support mono audio\n";
+					}
+
+					else
+					{
+						std::cout<<"APU::Microphone Recording Device - #" << std::dec << mic_id << " :: " << SDL_GetAudioDeviceName(x, 1) << "\n";
+						std::cout<<"APU::Microphone Channels - " << u32(final_spec.channels) << std::hex << "\n";
+
+						apu_stat.mic.init = true;
+						apu_stat.mic.id = mic_id;
+						apu_stat.mic.frequency = final_spec.freq;
+
+						break;
+					}
+				}
+			}
+		}
+
+		if(!apu_stat.mic.init)
+		{
+			std::cout<<"APU::No Microphone Recording Device found\n";
+		}
+	}
+
+	return init_status;
 }
 
 /****** Generates samples for NDS sound channels ******/
@@ -143,15 +212,22 @@ void NTR_APU::generate_channel_samples(s32* stream, int length, u8 id)
 	vol *= (apu_stat.main_volume / 127.0);
 	vol *= (config::volume / 128.0);
 
+	float pan_left = (127 - (apu_stat.channel[id].pan)) / 127.0;
+	float pan_right = (apu_stat.channel[id].pan / 127.0);
+
 	s8 nds_sample_8 = 0;
 	s16 nds_sample_16 = 0;
 	u32 samples_played = 0;
 	u32 adpcm_pos = 0;
+	u32 segment_pos = 0;
+	s32 output_sample = 0;
 
-	for(u32 x = 0; x < length; x++)
+	for(u32 x = 0; x < length;)
 	{
+		segment_pos = (config::use_stereo) ? (x/2) : x;
+
 		//Channel 0 should set default data
-		if(id == 0) { stream[x] = 0; }
+		if(id == 0) { output_sample = 0; }
 
 		//Pull data from NDS memory
 		if((apu_stat.channel[id].samples) && (apu_stat.channel[id].playing))
@@ -159,11 +235,11 @@ void NTR_APU::generate_channel_samples(s32* stream, int length, u8 id)
 			//PCM8
 			if(apu_stat.channel[id].format == 0)
 			{
-				u32 data_addr = (sample_pos + (sample_ratio * x));
-				nds_sample_8 = mem->memory_map[sample_pos + (sample_ratio * x)];
+				u32 data_addr = (sample_pos + (sample_ratio * segment_pos));
+				nds_sample_8 = mem->memory_map[sample_pos + (sample_ratio * segment_pos)];
 
 				//Scale S8 audio to S16
-				stream[x] += ((nds_sample_8 * 256) * vol);
+				output_sample = ((nds_sample_8 * 256) * vol);
 
 				if(data_addr >= (apu_stat.channel[id].play_src + apu_stat.channel[id].samples))
 				{
@@ -185,11 +261,11 @@ void NTR_APU::generate_channel_samples(s32* stream, int length, u8 id)
 			//PCM16
 			else if(apu_stat.channel[id].format == 1)
 			{
-				u32 data_addr = (sample_pos + (sample_ratio * x));
+				u32 data_addr = (sample_pos + (sample_ratio * segment_pos));
 				data_addr &= ~0x1;
 				nds_sample_16 = mem->read_u16_fast(data_addr);
 
-				stream[x] += (nds_sample_16 * vol);
+				output_sample = (nds_sample_16 * vol);
 
 				if(data_addr >= (apu_stat.channel[id].play_src + apu_stat.channel[id].samples))
 				{
@@ -211,11 +287,11 @@ void NTR_APU::generate_channel_samples(s32* stream, int length, u8 id)
 			//IMA-ADPCM
 			else if(apu_stat.channel[id].format == 2)
 			{
-				u32 data_pos = (apu_stat.channel[id].adpcm_pos + (sample_ratio * x));
+				u32 data_pos = (apu_stat.channel[id].adpcm_pos + (sample_ratio * segment_pos));
 				if(data_pos > apu_stat.channel[id].adpcm_buffer.size()) { data_pos = (apu_stat.channel[id].adpcm_buffer.size() - 1); }
 				nds_sample_16 = apu_stat.channel[id].adpcm_buffer[data_pos];
 
-				stream[x] += (nds_sample_16 * vol);
+				output_sample = (nds_sample_16 * vol);
 
 				if(data_pos >= apu_stat.channel[id].samples)
 				{
@@ -236,13 +312,28 @@ void NTR_APU::generate_channel_samples(s32* stream, int length, u8 id)
 
 			}
 
-			else { stream[x] += (-32768 * vol); }
+			else { output_sample = (-32768 * vol); }
 
 			samples_played++;
 		}
 
 		//Generate silence if sound has run out of samples or is not playing
-		else { stream[x] += (-32768 * vol); }
+		else { output_sample = (-32768 * vol); }
+
+		//Move output sample to sample buffer
+		//Adjust volume for stereo panning if necessary
+		if(config::use_stereo)
+		{
+			stream[x] += (output_sample * pan_left);
+			stream[x + 1] += (output_sample * pan_right);
+			x += 2;
+		}
+
+		else
+		{
+			stream[x] += output_sample;
+			x += 1;
+		}
 	}
 
 	//Advance data pointer to sound samples
@@ -348,5 +439,58 @@ void ntr_audio_callback(void* _apu, u8 *_stream, int _length)
 	{
 		channel_stream[x] /= 16;
 		stream[x] = channel_stream[x];
+	}
+}
+
+/****** SDL Audio Callback - Microphone ******/ 
+void ntr_microphone_callback(void* _apu, u8 *_stream, int _length)
+{
+	s16* stream = (s16*) _stream;
+	int length = _length/2;
+
+	NTR_APU* apu_link = (NTR_APU*) _apu;
+	u32 mic_volume = 0;
+
+	if(apu_link->apu_stat.mic.init)
+	{
+		//Grab samples from microphone and add to the buffer
+		if(apu_link->apu_stat.mic.is_on)
+		{
+			//Scale input samples according to microphone sensitivity
+			for(u32 x = 0; x < length; x++)
+			{
+				s32 test_sample = (stream[x] * config::microphone_sensitivity);
+
+				if(test_sample > MAX_16) { stream[x] = MAX_16; }
+				else if(test_sample < MIN_16) { stream[x] = MIN_16; }
+				else { stream[x] = test_sample; }
+			}
+
+			if(apu_link->apu_stat.mic.estimated_sample_rate)
+			{
+				double sample_ratio = apu_link->apu_stat.sample_rate / apu_link->apu_stat.mic.estimated_sample_rate;
+				double buffer_pos = 0.0;
+
+				while(buffer_pos < length)
+				{
+					u32 sample_pos = buffer_pos;
+					buffer_pos += sample_ratio;
+
+					//Convert to 8-bit audio data - Technically 16-bit but LSB is relevant sample data
+					u8 sample_data = (stream[sample_pos] >> 8);
+					apu_link->apu_stat.mic.sample_buffer.push_back(0);
+					apu_link->apu_stat.mic.sample_buffer.push_back(sample_data);
+				}
+			}
+		}
+
+		//Stop input and clear microphone buffer if turned off
+		else
+		{
+			apu_link->mic_buffer.clear();
+			apu_link->apu_stat.mic.sample_buffer.clear();
+			apu_link->apu_stat.mic.sample_index = 0;
+			SDL_PauseAudioDevice(apu_link->apu_stat.mic.id, 1);
+		}
 	}
 }

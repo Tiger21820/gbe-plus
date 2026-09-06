@@ -43,6 +43,20 @@ struct ntr_apu_data
 		bool decode_adpcm;
 	} channel[16];
 
+	//Microphone input for NDS
+	struct microphone_data
+	{
+		bool init;
+		bool is_on;
+		u32 id;
+		double frequency;
+		u16 output;
+		u32 poll_rate;
+		u32 estimated_sample_rate;
+		u32 sample_index;
+		std::vector<u8> sample_buffer;
+	} mic;
+
 	//IMA-ADPCM table
 	u16 adpcm_table[128];
 
@@ -56,9 +70,6 @@ struct ntr_apu_data
 	double sample_rate;
 
 	u8 channel_master_volume;
-
-	u16 mic_out;
 };
 
 #endif // NDS_APU_DATA
- 

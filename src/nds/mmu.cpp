@@ -394,6 +394,9 @@ void NTR_MMU::reset()
 	rumble_state = 0;
 	do_save = false;
 
+	is_mic_active = false;
+	mic_deactivation_count = 0;
+
 	//Small LUT for quickly getting DMAx register IDs.
 	//Each DMA register set is 12-bytes long, so this avoids using division frequently to get the ID
 	for(u32 x = 0; x < 48; x++) { dma_reg_lut[x] = x / 12; }
@@ -904,7 +907,29 @@ u8 NTR_MMU::read_u8(u32 address)
 		//Special handling for microphone input
 		if((touchscreen_state == 0x0C) || (touchscreen_state == 0x0D))
 		{
-			return (address & 0x1) ? (apu_stat->mic_out >> 8) : apu_stat->mic_out;
+			apu_stat->mic.poll_rate++;
+			is_mic_active = true;
+			mic_deactivation_count = 30;
+
+			if((config::mic_device == MIC_NDS) && (apu_stat->mic.init))
+			{
+				//Turn on microphone if possible
+				if(!apu_stat->mic.is_on)
+				{
+					apu_stat->mic.is_on = true;
+					SDL_PauseAudioDevice(apu_stat->mic.id, 0);
+				}
+
+				//Return microphone samples if available
+				if(apu_stat->mic.sample_index < apu_stat->mic.sample_buffer.size())
+				{
+					apu_stat->mic.output = apu_stat->mic.sample_buffer[apu_stat->mic.sample_index++];
+					printf("HE -> %d :: %x\n", apu_stat->mic.output, address);
+					return apu_stat->mic.output;
+				}
+			}
+
+			return (address & 0x1) ? (apu_stat->mic.output >> 8) : apu_stat->mic.output;
 		} 
 
 		//Return SPIDATA
@@ -2150,7 +2175,7 @@ void NTR_MMU::write_u8(u32 address, u8 value)
 				}
 
 				else { *reg_val = (raw_value >> 8); }
-				if((raw_value & 0xFF) != 0) { *reg_val += (raw_value & 0xFF) / 256.0; }
+				if((raw_value & 0xFF) != 0) { *reg_val += (raw_value & 0xFF) / 255.0; }
 			}
 
 			break;
@@ -2182,7 +2207,7 @@ void NTR_MMU::write_u8(u32 address, u8 value)
 					*reg_val = -1.0 * xy;
 				}
 				else { *reg_val = (xy_raw >> 8) & 0x7FFFF; }
-				if((xy_raw & 0xFF) != 0) { *reg_val += (xy_raw & 0xFF) / 256.0; }
+				if((xy_raw & 0xFF) != 0) { *reg_val += (xy_raw & 0xFF) / 255.0; }
 
 				//Set current XY position as the new reference point
 				*reg_pos = *reg_val;
@@ -2225,7 +2250,7 @@ void NTR_MMU::write_u8(u32 address, u8 value)
 				}
 
 				else { *reg_val = (raw_value >> 8); }
-				if((raw_value & 0xFF) != 0) { *reg_val += (raw_value & 0xFF) / 256.0; }
+				if((raw_value & 0xFF) != 0) { *reg_val += (raw_value & 0xFF) / 255.0; }
 			}
 
 			break;
@@ -2257,7 +2282,7 @@ void NTR_MMU::write_u8(u32 address, u8 value)
 					*reg_val = -1.0 * xy;
 				}
 				else { *reg_val = (xy_raw >> 8) & 0x7FFFF; }
-				if((xy_raw & 0xFF) != 0) { *reg_val += (xy_raw & 0xFF) / 256.0; }
+				if((xy_raw & 0xFF) != 0) { *reg_val += (xy_raw & 0xFF) / 255.0; }
 
 				//Set current XY position as the new reference point
 				*reg_pos = *reg_val;
@@ -2300,7 +2325,7 @@ void NTR_MMU::write_u8(u32 address, u8 value)
 				}
 
 				else { *reg_val = (raw_value >> 8); }
-				if((raw_value & 0xFF) != 0) { *reg_val += (raw_value & 0xFF) / 256.0; }
+				if((raw_value & 0xFF) != 0) { *reg_val += (raw_value & 0xFF) / 255.0; }
 			}
 
 			break;
@@ -2332,7 +2357,7 @@ void NTR_MMU::write_u8(u32 address, u8 value)
 					*reg_val = -1.0 * xy;
 				}
 				else { *reg_val = (xy_raw >> 8) & 0x7FFFF; }
-				if((xy_raw & 0xFF) != 0) { *reg_val += (xy_raw & 0xFF) / 256.0; }
+				if((xy_raw & 0xFF) != 0) { *reg_val += (xy_raw & 0xFF) / 255.0; }
 
 				//Set current XY position as the new reference point
 				*reg_pos = *reg_val;
@@ -2375,7 +2400,7 @@ void NTR_MMU::write_u8(u32 address, u8 value)
 				}
 
 				else { *reg_val = (raw_value >> 8); }
-				if((raw_value & 0xFF) != 0) { *reg_val += (raw_value & 0xFF) / 256.0; }
+				if((raw_value & 0xFF) != 0) { *reg_val += (raw_value & 0xFF) / 255.0; }
 			}
 
 			break;
@@ -2407,7 +2432,7 @@ void NTR_MMU::write_u8(u32 address, u8 value)
 					*reg_val = -1.0 * xy;
 				}
 				else { *reg_val = (xy_raw >> 8) & 0x7FFFF; }
-				if((xy_raw & 0xFF) != 0) { *reg_val += (xy_raw & 0xFF) / 256.0; }
+				if((xy_raw & 0xFF) != 0) { *reg_val += (xy_raw & 0xFF) / 255.0; }
 
 				//Set current XY position as the new reference point
 				*reg_pos = *reg_val;
@@ -5670,7 +5695,7 @@ void NTR_MMU::process_microphone()
 	switch(config::mic_device)
 	{
 		case MIC_NONE:
-			apu_stat->mic_out = 0;
+			apu_stat->mic.output = 0;
 			break;
 
 		case MIC_NDS:
@@ -5680,7 +5705,7 @@ void NTR_MMU::process_microphone()
 			break;
 
 		case MIC_NOISE:
-			apu_stat->mic_out = (rand() % 0xFF);
+			apu_stat->mic.output = (rand() % 0xFF);
 			break;
 
 		case MIC_WANTAME:
@@ -5780,6 +5805,48 @@ void NTR_MMU::setup_default_firmware()
 	touchscreen.adc_y2 = read_u16(0x27FFCE0) & 0x1FFF;
 	touchscreen.scr_x2 = read_u8(0x27FFCE2);
 	touchscreen.scr_y2 = read_u8(0x27FFCE3);
+}
+
+/****** Updates the estimated microphone sample rate ******/
+void NTR_MMU::update_mic_sample_rate()
+{
+	apu_stat->mic.estimated_sample_rate = (apu_stat->mic.poll_rate / 4) * 60;
+	apu_stat->mic.poll_rate = 0;
+
+	//Refine estimate based on active timers
+	u32 base_freq = (1 << 25);
+	u32 refined_freq = apu_stat->mic.estimated_sample_rate;
+	s32 new_freq_diff = 0;
+	s32 last_freq_diff = base_freq;
+
+	for(u32 x = 0; x < 4; x++)
+	{
+		if(nds7_timer->at(x).enable)
+		{
+			u32 timer_freq = base_freq / (0xFFFF - (nds7_timer->at(x).reload_value * nds7_timer->at(x).prescalar));
+			new_freq_diff = abs(s32(apu_stat->mic.estimated_sample_rate - timer_freq));
+
+			if(new_freq_diff < last_freq_diff)
+			{
+				last_freq_diff = new_freq_diff;
+				refined_freq = timer_freq;
+			}
+		} 
+	}
+
+	apu_stat->mic.estimated_sample_rate = refined_freq;
+
+	//Stop microphone input after period of inactivity
+	if(mic_deactivation_count == 0)
+	{
+		is_mic_active = false;
+
+		//Turn on microphone if possible
+		if((config::mic_device == MIC_NDS) && (apu_stat->mic.init))
+		{
+			apu_stat->mic.is_on = false;
+		}
+	}
 }
 
 /****** Calculates parameter length (in words) for a given GX packed or unpacked command ******/
@@ -6096,6 +6163,7 @@ bool NTR_MMU::mmu_read(u32 offset, std::string filename)
 	file.read((char*)&do_save, sizeof(do_save));
 	file.read((char*)&fetch_request, sizeof(fetch_request));
 	file.read((char*)&gx_command, sizeof(gx_command));
+	file.read((char*)&is_mic_active, sizeof(is_mic_active));
 
 	//Serialize DMA and Sound Capture data from save state
 	file.read((char*)&dma, sizeof(dma));
@@ -6277,6 +6345,7 @@ bool NTR_MMU::mmu_write(std::string filename)
 	file.write((char*)&do_save, sizeof(do_save));
 	file.write((char*)&fetch_request, sizeof(fetch_request));
 	file.write((char*)&gx_command, sizeof(gx_command));
+	file.write((char*)&is_mic_active, sizeof(is_mic_active));
 
 	//Serialize DMA and Sound Capture data to save state
 	file.write((char*)&dma, sizeof(dma));

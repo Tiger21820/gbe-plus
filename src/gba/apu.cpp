@@ -187,6 +187,11 @@ bool AGB_APU::init()
 
 	else
 	{
+		if(desired_spec.freq != apu_stat.sample_rate)
+		{
+			std::cout<<"APU::Warning - Sample Rate is " << std::dec << desired_spec.freq << " instead of configured value\n";
+		}
+
 		apu_stat.channel_master_volume = config::volume;
 		apu_stat.dma[0].master_volume = config::volume;
 		apu_stat.dma[1].master_volume = config::volume;
@@ -195,7 +200,12 @@ bool AGB_APU::init()
 
 		SDL_PauseAudio(0);
 		init_status = true;
+
 		std::cout<<"APU::Initialized\n";
+		std::cout<<"APU::Audio Format - S16, " << std::dec << desired_spec.freq << "Hz, ";
+		std::cout<<((desired_spec.channels == 1) ? "Mono, " : "Stereo, ");
+		std::cout<<"Sample Size: " << desired_spec.samples << std::hex << "\n";
+		std::cout<<"APU::Audio Driver - " << SDL_GetCurrentAudioDriver() << "\n";
 	}
 
 	//Open microphone if enabled and if possible
@@ -268,6 +278,42 @@ bool AGB_APU::init()
 	}
 
 	return init_status;
+}
+
+/****** Reinitialize APU with SDL - Used after loading save states or config updates ******/
+bool AGB_APU::soft_init()
+{
+	SDL_CloseAudio();
+
+	//Force sample rate to current config
+	//Save states can contain old sample rate and may not be valid once reloaded!
+	apu_stat.sample_rate = config::sample_rate;
+
+	//Setup the desired audio specifications
+    	desired_spec.freq = apu_stat.sample_rate;
+	desired_spec.format = AUDIO_S16SYS;
+	desired_spec.channels = (config::use_stereo) ? 2 : 1;
+    	desired_spec.samples = (config::sample_size) ? config::sample_size : 4096;
+    	desired_spec.callback = agb_audio_callback;
+    	desired_spec.userdata = this;
+
+    	//Open SDL audio for desired specifications
+	if(SDL_OpenAudio(&desired_spec, nullptr) < 0) 
+	{ 
+		std::cout<<"APU::Failed to open audio\n";
+		return false;
+	}
+
+	else
+	{
+		apu_stat.channel_master_volume = config::volume;
+		apu_stat.dma[0].master_volume = config::volume;
+		apu_stat.dma[1].master_volume = config::volume;
+		apu_stat.psg_fill_rate = apu_stat.sample_rate / 60;
+		SDL_PauseAudio(0);
+
+		return true;
+	}
 }
 
 /******* Generate samples for GBA sound channels 1-4 ******/

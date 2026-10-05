@@ -678,6 +678,9 @@ void validate_system_type()
 		config::gba_enhance = true;
 	}
 
+	//Set Auto for DMG and GBC
+	else if((ext == ".gbc") || (ext == ".gb")) { config::gb_type = SYS_AUTO; }
+
 	//Set per-game .ini filename once system type has been validated
 	config::game_ini_file = get_game_ini_filename();
 }
@@ -730,6 +733,9 @@ u8 get_system_type_from_file(std::string filename)
 		gb_type = SYS_GBC;
 		config::gba_enhance = true;
 	}
+
+	//Set Auto for DMG and GBC, check CGB flag below
+	else if((ext == ".gbc") || (ext == ".gb")) { gb_type = SYS_AUTO; }
 
 	//For Auto or GBC mode, determine what the CGB Flag is
 	if((gb_type == SYS_AUTO) || (gb_type == SYS_GBC) || (gb_type == SYS_SGB) || (gb_type == SYS_SGB2))
@@ -1147,19 +1153,40 @@ void parse_filenames()
 /****** Parse the contents of a file for .ini options ******/
 bool parse_ini_file(std::string filename)
 {
+	if(util::get_filename_from_path(filename).empty()) { return false; }
+
+	bool is_gbe_ini = (util::get_filename_from_path(filename) == "gbe.ini");
+
+	//Always print out per-game .ini file even if it can't be opened or does not exists
+	//Alerts the user to the expected filename to create it or make changes
+	if(!is_gbe_ini)
+	{
+		std::cout<<"GBE::Per-game .ini file: " << util::get_filename_from_path(filename) << "\n";
+	}
+
 	std::ifstream file(filename.c_str(), std::ios::in);
 	std::string input_line = "";
 	std::string line_char = "";
 
-	//Clear recent files and set up new ini options - gbe.ini ONLY!
-	if(util::get_filename_from_path(filename) == "gbe.ini")
+	if(!file.is_open())
 	{
-		config::recent_files.clear();
+		if(is_gbe_ini)
+		{
+			std::cout<<"GBE::Error - Could not open gbe.ini file\n";
+		}
+
+		else
+		{
+			std::cout<<"GBE::Warning - Could not open per-game .ini file\n";
+		}
+
+		return false;
 	}
 
-	else
+	//Clear recent files and set up new ini options - gbe.ini ONLY!
+	if(is_gbe_ini)
 	{
-		std::cout<<"GBE::Per-game .ini file: " << util::get_filename_from_path(filename) << "\n";
+		config::recent_files.clear();
 	}
 
 	std::vector <std::string> ini_opts;
@@ -1167,6 +1194,7 @@ bool parse_ini_file(std::string filename)
 	int touch_zone_counter = 0;
 	u8 temp_cart_type = 0xFF;
 	u8 temp_save_type = 0xFF;
+	std::string temp_str = "";
 
 	//Cycle through whole file, line-by-line
 	while(getline(file, input_line))
@@ -1379,7 +1407,7 @@ bool parse_ini_file(std::string filename)
 		if(!parse_ini_number(ini_item, "#microphone_id", config::microphone_id, ini_opts, x, 0, 0xFFFFFFFF)) { return false; }
 
 		//Microphone sensitivity
-		if(!parse_ini_number(ini_item, "#microphone_sensitivity", config::microphone_sensitivity, ini_opts, x, 1, 8)) { return false; }
+		if(!parse_ini_number(ini_item, "#microphone_sensitivity", config::microphone_sensitivity, ini_opts, x, 1, 256)) { return false; }
 
 		//Force cart audio sync
 		if(!parse_ini_bool(ini_item, "#force_cart_audio_sync", config::force_cart_audio_sync, ini_opts, x)) { return false; }
@@ -1391,7 +1419,7 @@ bool parse_ini_file(std::string filename)
 		parse_ini_str(ini_item, "#override_audio_driver", config::override_audio_driver, ini_opts, x);
 
 		//Sample rate
-		if(!parse_ini_number(ini_item, "#sample_rate", config::sample_rate, ini_opts, x, 1, 48000)) { return false; }
+		if(!parse_ini_number(ini_item, "#sample_rate", config::sample_rate, ini_opts, x, 1, 96000)) { return false; }
 
 		//Sample size
 		if(!parse_ini_number(ini_item, "#sample_size", config::sample_size, ini_opts, x, 0, 4096)) { return false; }
@@ -1779,76 +1807,58 @@ bool parse_ini_file(std::string filename)
 		if(!parse_ini_number(ini_item, "#id_db_index", config::ir_db_index, ini_opts, x, 0, 0xFFFFFFFF)) { return false; }
 
 		//Multi Plust On System ID
-		if(ini_item == "#mpos_id")
+		if(parse_ini_str(ini_item, "#mpos_id", temp_str, ini_opts, x))
 		{
-			if((x + 1) < size)
-			{
-				ini_item = ini_opts[++x];
-				std::size_t found = ini_item.find("0x");
-				std::string format = ini_item.substr(0, 2);
+			ini_item = temp_str;
+			std::size_t found = ini_item.find("0x");
+			std::string format = ini_item.substr(0, 2);
 
-				//Value must be in hex format with "0x"
-				if(format != "0x")
-				{
-					std::cout<<"GBE::Error - Could not parse .ini (#mpos_id) \n";
-					return false;
-				}
-
-				std::string id = ini_item.substr(found + 2);
-
-				//Value must not be more than 4 characters long for 16-bit
-				if(id.size() > 4)
-				{
-					std::cout<<"GBE::Error - Could not parse .ini (#mpos_id) \n";
-					return false;
-				}
-
-				u32 final_id = 0;
-
-				//Parse the string into hex
-				if(!util::from_hex_str(id, final_id))
-				{
-					std::cout<<"GBE::Error - Could not parse .ini (#mpos_id) \n";
-					return false;
-				}
-
-				config::mpos_id = final_id;
-			}
-
-			else
+			//Value must be in hex format with "0x"
+			if(format != "0x")
 			{
 				std::cout<<"GBE::Error - Could not parse .ini (#mpos_id) \n";
 				return false;
 			}
+
+			std::string id = ini_item.substr(found + 2);
+
+			//Value must not be more than 4 characters long for 16-bit
+			if(id.size() > 4)
+			{
+				std::cout<<"GBE::Error - Could not parse .ini (#mpos_id) \n";
+				return false;
+			}
+
+			u32 final_id = 0;
+
+			//Parse the string into hex
+			if(!util::from_hex_str(id, final_id))
+			{
+				std::cout<<"GBE::Error - Could not parse .ini (#mpos_id) \n";
+				return false;
+			}
+
+			config::mpos_id = final_id;
 		}
 
 		//Ubisoft Thrustmaster Pedometer steps
-		if(ini_item == "#utp_steps")
+		if(parse_ini_str(ini_item, "#utp_steps", temp_str, ini_opts, x))
 		{
-			if((x + 1) < size)
-			{
-				ini_item = ini_opts[++x];
+			ini_item = temp_str;
 
-				//Make sure only 5 characters max are used
-				if(ini_item.size() > 5) { ini_item = ini_item.substr(0, 5); }
+			//Make sure only 5 characters max are used
+			if(ini_item.size() > 5) { ini_item = ini_item.substr(0, 5); }
 
-				u32 steps = 0;
+			u32 steps = 0;
 
-				//Parse the string into hex
-				if(!util::from_hex_str(ini_item, steps))
-				{
-					std::cout<<"GBE::Error - Could not parse .ini (#utp_steps) \n";
-					return false;
-				}
-
-				config::utp_steps = steps;
-			}
-
-			else
+			//Parse the string into hex
+			if(!util::from_hex_str(ini_item, steps))
 			{
 				std::cout<<"GBE::Error - Could not parse .ini (#utp_steps) \n";
 				return false;
 			}
+
+			config::utp_steps = steps;
 		}
 
 		//Total time for GBA Jukebox recording
@@ -2086,6 +2096,9 @@ bool load_ini_file(std::string filename)
 
 		result = generate_ini_file();
 		if(!result) { return false; }
+
+		config::ini_file = "gbe.ini";
+		filename = "gbe.ini";
 	}
 
 	//After the location of the data directory is known, set path of temporary media file and karaoke file
@@ -3270,20 +3283,20 @@ bool generate_ini_file()
 	//Build .ini contents
 	std::string ini_contents = "";
 
-	ini_contents += "[#use_bios]\n\n";
-	ini_contents += "[#use_firmware]\n\n";
-	ini_contents += "[#sio_device]\n\n";
-	ini_contents += "[#ir_device]\n\n";
-	ini_contents += "[#mic_device]\n\n";
-	ini_contents += "[#slot1_device]\n\n";
-	ini_contents += "[#slot2_device]\n\n";
-	ini_contents += "[#system_type]\n\n";
-	ini_contents += "[#use_cheats]\n\n";
-	ini_contents += "[#use_patches]\n\n";
-	ini_contents += "[#dmg_on_gbc_pal]\n\n";
-	ini_contents += "[#dmg_custom_bg_pal]\n\n";
-	ini_contents += "[#dmg_custom_obj_pal]\n\n";
-	ini_contents += "[#min_custom_color]\n\n";
+	ini_contents += "[#use_bios:0]\n\n";
+	ini_contents += "[#use_firmware:0]\n\n";
+	ini_contents += "[#sio_device:0]\n\n";
+	ini_contents += "[#ir_device:0]\n\n";
+	ini_contents += "[#mic_device:0]\n\n";
+	ini_contents += "[#slot1_device:0]\n\n";
+	ini_contents += "[#slot2_device:0]\n\n";
+	ini_contents += "[#system_type:0]\n\n";
+	ini_contents += "[#use_cheats:0]\n\n";
+	ini_contents += "[#use_patches:0]\n\n";
+	ini_contents += "[#dmg_on_gbc_pal:0]\n\n";
+	ini_contents += "[#dmg_custom_bg_pal:0xFFFFFFFF:0xFFC0C0C0:0xFF606060:0xFF000000]\n\n";
+	ini_contents += "[#dmg_custom_obj_pal:0xFFFFFFFF:0xFFC0C0C0:0xFF606060:0xFF000000:0xFFFFFFFF:0xFFC0C0C0:0xFF606060:0xFF000000]\n\n";
+	ini_contents += "[#min_custom_color:0xFF000000]\n\n";
 	ini_contents += "[#dmg_bios_path]\n\n";
 	ini_contents += "[#gbc_bios_path]\n\n";
 	ini_contents += "[#agb_bios_path]\n\n";
@@ -3298,64 +3311,64 @@ bool generate_ini_file()
 	ini_contents += "[#card_file]\n\n";
 	ini_contents += "[#image_file]\n\n";
 	ini_contents += "[#data_file]\n\n";
-	ini_contents += "[#use_opengl]\n\n";
-	ini_contents += "[#vertex_shader]\n\n";
-	ini_contents += "[#fragment_shader]\n\n";
-	ini_contents += "[#scaling_factor]\n\n";
-	ini_contents += "[#maintain_aspect_ratio]\n\n";
-	ini_contents += "[#max_fps]\n\n";
-	ini_contents += "[#rtc_offset]\n\n";
-	ini_contents += "[#oc_flags]\n\n";
-	ini_contents += "[#dead_zone]\n\n";
-	ini_contents += "[#volume]\n\n";
-	ini_contents += "[#mute]\n\n";
-	ini_contents += "[#use_stereo]\n\n";
-	ini_contents += "[#use_microphone]\n\n";
-	ini_contents += "[#microphone_id]\n\n";
-	ini_contents += "[#microphone_sensitivity]\n\n";
-	ini_contents += "[#force_cart_audio_sync]\n\n";
+	ini_contents += "[#use_opengl:0]\n\n";
+	ini_contents += "[#vertex_shader:'vertex.vs']\n\n";
+	ini_contents += "[#fragment_shader:'fragment.fs']\n\n";
+	ini_contents += "[#scaling_factor:1]\n\n";
+	ini_contents += "[#maintain_aspect_ratio:1]\n\n";
+	ini_contents += "[#max_fps:0]\n\n";
+	ini_contents += "[#rtc_offset:0:0:0:0:0:0]\n\n";
+	ini_contents += "[#oc_flags:0]\n\n";
+	ini_contents += "[#dead_zone:16000]\n\n";
+	ini_contents += "[#volume:128]\n\n";
+	ini_contents += "[#mute:0]\n\n";
+	ini_contents += "[#use_stereo:0]\n\n";
+	ini_contents += "[#use_microphone:0]\n\n";
+	ini_contents += "[#microphone_id:0]\n\n";
+	ini_contents += "[#microphone_sensitivity:1]\n\n";
+	ini_contents += "[#force_cart_audio_sync:0]\n\n";
 	ini_contents += "[#override_audio_driver]\n\n";
-	ini_contents += "[#use_osd]\n\n";
-	ini_contents += "[#osd_alpha]\n\n";
-	ini_contents += "[#sample_rate]\n\n";
-	ini_contents += "[#sample_size]\n\n";
-	ini_contents += "[#gbe_key_controls]\n\n";
-	ini_contents += "[#gbe_joy_controls]\n\n";
-	ini_contents += "[#con_key_controls]\n\n";
-	ini_contents += "[#con_joy_controls]\n\n";
-	ini_contents += "[#gbe_turbo_button]\n\n";
-	ini_contents += "[#chip_list]\n\n";
-	ini_contents += "[#use_intl_beast_link_gate]\n\n";
-	ini_contents += "[#use_haptics]\n\n";
-	ini_contents += "[#use_motion]\n\n";
-	ini_contents += "[#motion_dead_zone]\n\n";
-	ini_contents += "[#motion_scaler]\n\n";
-	ini_contents += "[#use_ddr_mapping]\n\n";
-	ini_contents += "[#hotkeys]\n\n";
-	ini_contents += "[#use_netplay]\n\n";
-	ini_contents += "[#use_netplay_hard_sync]\n\n";
-	ini_contents += "[#use_net_gate]\n\n";
-	ini_contents += "[#use_real_gbma_server]\n\n";
-	ini_contents += "[#gbma_server_http_port]\n\n";
-	ini_contents += "[#netplay_sync_threshold]\n\n";
-	ini_contents += "[#netplay_server_port]\n\n";
-	ini_contents += "[#netplay_client_port]\n\n";
-	ini_contents += "[#netplay_client_ip]\n\n";
-	ini_contents += "[#gbma_server_ip]\n\n";
-	ini_contents += "[#netplay_id]\n\n";
-	ini_contents += "[#campho_ringer_port]\n\n";
-	ini_contents += "[#campho_input_port]\n\n";
-	ini_contents += "[#campho_web_port]\n\n";
-	ini_contents += "[#ir_db_index]\n\n";
-	ini_contents += "[#nds_touch_mode]\n\n";
-	ini_contents += "[#virtual_cursor_enable]\n\n";
+	ini_contents += "[#use_osd:1]\n\n";
+	ini_contents += "[#osd_alpha:255]\n\n";
+	ini_contents += "[#sample_rate:44100]\n\n";
+	ini_contents += "[#sample_size:0]\n\n";
+	ini_contents += "[#gbe_key_controls:122:120:100:99:13:32:1073741904:1073741903:1073741906:1073741905:97:115]\n\n";
+	ini_contents += "[#gbe_joy_controls:100:101:102:103:107:106:200:201:202:203:104:105]\n\n";
+	ini_contents += "[#con_key_controls:260:262:264:258:263:265]\n\n";
+	ini_contents += "[#con_joy_controls:204:205:206:207:109:110]\n\n";
+	ini_contents += "[#gbe_turbo_button:0:0:0:0:0:0:0:0:0:0:0:0]\n\n";
+	ini_contents += "[#chip_list:0:0:0:0:0:0]\n\n";
+	ini_contents += "[#use_intl_beast_link_gate:0]\n\n";
+	ini_contents += "[#use_haptics:1]\n\n";
+	ini_contents += "[#use_motion:0]\n\n";
+	ini_contents += "[#motion_dead_zone:1.0]\n\n";
+	ini_contents += "[#motion_scaler:10.0]\n\n";
+	ini_contents += "[#use_ddr_mapping:0]\n\n";
+	ini_contents += "[#hotkeys:9:109:112:107:108]\n\n";
+	ini_contents += "[#use_netplay:1]\n\n";
+	ini_contents += "[#use_netplay_hard_sync:1]\n\n";
+	ini_contents += "[#use_net_gate:0]\n\n";
+	ini_contents += "[#use_real_gbma_server:0]\n\n";
+	ini_contents += "[#gbma_server_http_port:8000]\n\n";
+	ini_contents += "[#netplay_sync_threshold:32]\n\n";
+	ini_contents += "[#netplay_server_port:2000]\n\n";
+	ini_contents += "[#netplay_client_port:2001]\n\n";
+	ini_contents += "[#netplay_client_ip::127.0.0.1]\n\n";
+	ini_contents += "[#gbma_server_ip:127.0.0.1]\n\n";
+	ini_contents += "[#netplay_id:0]\n\n";
+	ini_contents += "[#campho_ringer_port:1980]\n\n";
+	ini_contents += "[#campho_input_port:1981]\n\n";
+	ini_contents += "[#campho_web_port:1212]\n\n";
+	ini_contents += "[#ir_db_index:0]\n\n";
+	ini_contents += "[#nds_touch_mode:0]\n\n";
+	ini_contents += "[#virtual_cursor_enable:0]\n\n";
 	ini_contents += "[#virtual_cursor_file]\n\n";
-	ini_contents += "[#virtual_cursor_opacity]\n\n";
-	ini_contents += "[#virtual_cursor_timeout]\n\n";
-	ini_contents += "[#mpos_id]\n\n";
-	ini_contents += "[#utp_steps]\n\n";
-	ini_contents += "[#mw_data]\n\n";
-	ini_contents += "[#jukebox_total_time]\n\n";
+	ini_contents += "[#virtual_cursor_opacity:31]\n\n";
+	ini_contents += "[#virtual_cursor_timeout:180]\n\n";
+	ini_contents += "[#mpos_id:0x16C0]\n\n";
+	ini_contents += "[#utp_steps:0]\n\n";
+	ini_contents += "[#mw_data:0:0:0:0:0:0]\n\n";
+	ini_contents += "[#jukebox_total_time:1800]\n\n";
 	ini_contents += "[#audio_conversion_command]\n\n";
 	ini_contents += "[#remove_vocals_command]\n\n";
 	ini_contents += "[#glucoboy_daily_grps]\n\n";
@@ -3363,32 +3376,22 @@ bool generate_ini_file()
 	ini_contents += "[#glucoboy_good_days]\n\n";
 	ini_contents += "[#glucoboy_days_until_bonus]\n\n";
 	ini_contents += "[#glucoboy_total]\n\n";
-	ini_contents += "[#play_yan_fs_delay]\n\n";
-	ini_contents += "[#wave_scanner_level]\n\n";
+	ini_contents += "[#play_yan_fs_delay:0]\n\n";
+	ini_contents += "[#wave_scanner_level:0]\n\n";
 
 	//Save contents to file.
 	std::ofstream file("gbe.ini", std::ios::out);
 
 	if(!file.is_open())
 	{
-		std::cout<<"GBE::Could not create a generic .ini file. Settings will not be saved.\n";
+		std::cout<<"GBE::Could not create a generic gbe.ini file. Settings will not be saved.\n";
 		return false; 
 	}
 
 	file << ini_contents;
 	file.close();
 
-	//Populate .ini file with defaults and resave
-	std::string temp_path = config::cfg_path;
-	config::cfg_path = "";
-
-	if(!save_ini_file())
-	{
-		std::cout<<"GBE::Could not create a generic .ini file. Settings will not be saved.\n";
-		return false;
-	}
-
-	std::cout<<"Generating generic .ini file\n";
+	std::cout<<"GBE::Generating generic gbe.ini file\n";
 
 	return true;
 }
@@ -3679,8 +3682,10 @@ bool parse_ini_bool(std::string ini_item, std::string search_item, bool &ini_boo
 }
 
 /****** Parses .ini string for string value ******/
-void parse_ini_str(std::string ini_item, std::string search_item, std::string &ini_str, std::vector <std::string> &ini_opts, u32 &ini_pos)
+bool parse_ini_str(std::string ini_item, std::string search_item, std::string &ini_str, std::vector <std::string> &ini_opts, u32 &ini_pos)
 {
+	bool result = false;
+
 	if(ini_item == search_item)
 	{
 		if((ini_pos + 1) < ini_opts.size()) 
@@ -3690,13 +3695,15 @@ void parse_ini_str(std::string ini_item, std::string search_item, std::string &i
 			first_char = ini_item[0];
 				
 			//When left blank, don't parse the next line item
-			if(first_char != "#") { ini_str = ini_item; }
+			if(first_char != "#") { ini_str = ini_item; result = true; }
 			else { ini_str = ""; ini_pos--;}
  
 		}
 
 		else { ini_str = ""; }
 	}
+
+	return result;
 }
 
 /****** Parses .ini string for integer values - u32 ******/

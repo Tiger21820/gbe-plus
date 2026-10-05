@@ -429,6 +429,9 @@ void NTR_LCD::reset()
 	lcd_3D_stat.last_y = 0;
 	lcd_3D_stat.last_z = 0;
 
+	lcd_3D_stat.last_tx = 0;
+	lcd_3D_stat.last_ty = 0;
+
 	lcd_3D_stat.poly_min_x = 0;
 	lcd_3D_stat.poly_max_x = 0;
 
@@ -557,6 +560,9 @@ bool NTR_LCD::init()
 	}
 
 	std::cout<<"LCD::Initialized\n";
+	std::cout<<"LCD::Video Format - " << std::dec << ((config::use_opengl) ? "OpenGL, " : "Software Rendering, ");
+	std::cout<<(config::sys_width * config::scaling_factor) << "x" << (config::sys_height * config::scaling_factor) << std::hex << "\n";
+	if(config::sdl_render) { std::cout<<"LCD::Video Driver - " << SDL_GetCurrentVideoDriver() << "\n"; }
 
 	return true;
 }

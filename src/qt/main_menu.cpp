@@ -359,7 +359,7 @@ void main_menu::open_file()
 	//Close the core
 	if(main_menu::gbe_plus != nullptr) 
 	{
-		main_menu::gbe_plus->shutdown();
+		if(main_menu::gbe_plus->running) { main_menu::gbe_plus->shutdown(); }
 		main_menu::gbe_plus->core_emu::~core_emu();
 	}
 
@@ -426,7 +426,7 @@ void main_menu::open_am3_fldr()
 	//Close the core
 	if(main_menu::gbe_plus != nullptr) 
 	{
-		main_menu::gbe_plus->shutdown();
+		if(main_menu::gbe_plus->running) { main_menu::gbe_plus->shutdown(); }
 		main_menu::gbe_plus->core_emu::~core_emu();
 	}
 
@@ -472,7 +472,7 @@ void main_menu::open_no_cart()
 	//Close the core
 	if(main_menu::gbe_plus != nullptr) 
 	{
-		main_menu::gbe_plus->shutdown();
+		if(main_menu::gbe_plus->running) { main_menu::gbe_plus->shutdown(); }
 		main_menu::gbe_plus->core_emu::~core_emu();
 	}
 
@@ -741,7 +741,7 @@ void main_menu::quit()
 	//Close the core
 	if(main_menu::gbe_plus != nullptr) 
 	{
-		main_menu::gbe_plus->shutdown();
+		if(main_menu::gbe_plus->running) { main_menu::gbe_plus->shutdown(); }
 		main_menu::gbe_plus->core_emu::~core_emu();
 	}
 
@@ -770,10 +770,11 @@ void main_menu::quit()
 
 	switch(settings->freq->currentIndex())
 	{
-		case 0: config::sample_rate = 48000.0; break;
-		case 1: config::sample_rate = 44100.0; break;
-		case 2: config::sample_rate = 22050.0; break;
-		case 3: config::sample_rate = 11025.0; break;
+		case 0: config::sample_rate = 96000.0; break;
+		case 1: config::sample_rate = 48000.0; break;
+		case 2: config::sample_rate = 44100.0; break;
+		case 3: config::sample_rate = 22050.0; break;
+		case 4: config::sample_rate = 11025.0; break;
 	}
 
 	save_ini_file();
@@ -998,6 +999,8 @@ void main_menu::boot_game()
 			config::gb_type = SYS_GBC;
 			config::gba_enhance = true;
 		}
+
+		else if((ext == ".gbc") || (ext == ".gb")) { config::gb_type = SYS_AUTO; }
 		
 		else { config::gba_enhance = false; }
 
@@ -1015,6 +1018,27 @@ void main_menu::boot_game()
 		if((config::gb_type == SYS_GBA) && (old_cart_type == AGB_AM3) && (config::cart_type != AGB_AM3))
 		{
 			config::agb_save_type = AGB_AUTO_DETECT;
+		}
+	}
+
+	//Check for SGB or SGB2 core with NOCART
+	if((config::rom_file == "NOCART") && ((config::gb_type == SYS_SGB) || (config::gb_type == SYS_SGB2)))
+	{
+		std::string mesg_text = "GBE+ does not support SGB BIOS and cannot boot this system without a cartridge"; 
+		warning_box->setText(QString::fromStdString(mesg_text));
+		warning_box->show();
+		return;
+	}
+
+	//Reset SDL audio if a new audio driver is needs to be used
+	if(!config::override_audio_driver.empty())
+	{
+		std::string current_driver = SDL_GetCurrentAudioDriver();
+
+		if(current_driver != config::override_audio_driver)
+		{
+			SDL_AudioQuit();
+			SDL_AudioInit(config::override_audio_driver.c_str());
 		}
 	}
 
@@ -1470,7 +1494,7 @@ void main_menu::reset()
 			return;
 		}
 
-		main_menu::gbe_plus->shutdown();
+		if(main_menu::gbe_plus->running) { main_menu::gbe_plus->shutdown(); }
 		main_menu::gbe_plus->core_emu::~core_emu();
 
 		boot_game();
@@ -1659,7 +1683,7 @@ void main_menu::load_recent(int file_id)
 	//Close the core
 	if(main_menu::gbe_plus != nullptr) 
 	{
-		main_menu::gbe_plus->shutdown();
+		if(main_menu::gbe_plus->running) { main_menu::gbe_plus->shutdown(); }
 		main_menu::gbe_plus->core_emu::~core_emu();
 	}
 
@@ -1707,7 +1731,13 @@ void main_menu::save_state(int slot)
 {
 	if(main_menu::gbe_plus != nullptr)
 	{
-		main_menu::gbe_plus->save_state(slot);
+		if(!main_menu::gbe_plus->save_state(slot))
+		{
+			std::string mesg_text = "Could not create save state for slot " + util::to_str(slot);
+			warning_box->setText(QString::fromStdString(mesg_text));
+			warning_box->show();
+			return;
+		}
 
 		//Update save state menus with latest changes
 		update_save_state_list(state_save_list);
@@ -1720,7 +1750,13 @@ void main_menu::load_state(int slot)
 {
 	if(main_menu::gbe_plus != nullptr)
 	{
-		main_menu::gbe_plus->load_state(slot);
+		if(!main_menu::gbe_plus->load_state(slot))
+		{
+			std::string mesg_text = "Could not load save state for slot " + util::to_str(slot);
+			warning_box->setText(QString::fromStdString(mesg_text));
+			warning_box->show();
+			return;
+		}
 
 		//Apply current volume settings
 		settings->update_volume();

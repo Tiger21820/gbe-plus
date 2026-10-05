@@ -133,11 +133,21 @@ bool NTR_APU::init()
 
 	else
 	{
+		if(desired_spec.freq != apu_stat.sample_rate)
+		{
+			std::cout<<"APU::Warning - Sample Rate is " << std::dec << desired_spec.freq << " instead of configured value\n";
+		}
+
 		apu_stat.channel_master_volume = config::volume;
 
 		SDL_PauseAudio(0);
 		init_status = true;
+
 		std::cout<<"APU::Initialized\n";
+		std::cout<<"APU::Audio Format - S16, " << std::dec << desired_spec.freq << "Hz, ";
+		std::cout<<((desired_spec.channels == 1) ? "Mono, " : "Stereo, ");
+		std::cout<<"Sample Size: " << desired_spec.samples << std::hex << "\n";
+		std::cout<<"APU::Audio Driver - " << SDL_GetCurrentAudioDriver() << "\n";
 	}
 
 	//Open microphone if enabled and if possible
@@ -200,15 +210,59 @@ bool NTR_APU::init()
 	return init_status;
 }
 
+/****** Reinitialize APU with SDL - Used after loading save states or config updates ******/
+bool NTR_APU::soft_init()
+{
+	SDL_CloseAudio();
+
+	//Force sample rate to current config
+	//Save states can contain old sample rate and may not be valid once reloaded!
+	apu_stat.sample_rate = config::sample_rate;
+
+	//Setup the desired audio specifications
+    	desired_spec.freq = apu_stat.sample_rate;
+	desired_spec.format = AUDIO_S16SYS;
+	desired_spec.channels = (config::use_stereo) ? 2 : 1;
+    	desired_spec.samples = (config::sample_size) ? config::sample_size : 4096;
+    	desired_spec.callback = ntr_audio_callback;
+    	desired_spec.userdata = this;
+
+    	//Open SDL audio for desired specifications
+	if(SDL_OpenAudio(&desired_spec, nullptr) < 0) 
+	{ 
+		std::cout<<"APU::Failed to open audio\n";
+		return false;
+	}
+
+	else
+	{
+		apu_stat.channel_master_volume = config::volume;
+
+		SDL_PauseAudio(0);
+		return true;
+	}
+}
+
 /****** Generates samples for NDS sound channels ******/
 void NTR_APU::generate_channel_samples(s32* stream, int length, u8 id)
 {
 	double sample_ratio = (apu_stat.channel[id].output_frequency / apu_stat.sample_rate);
 	u32 sample_pos = apu_stat.channel[id].data_pos;
-	u8 loop_mode = ((apu_stat.channel[id].cnt >> 27) & 0x3);
+	u8 loop_mode = ((apu_stat.channel[id].cnt >> 27) & 0x03);
+	u8 volume_div = ((apu_stat.channel[id].cnt >> 8) & 0x03);
 
 	//Calculate volume
-	float vol = (apu_stat.channel[id].volume != 0) ? (apu_stat.channel[id].volume / 127.0) : 0;
+	u8 volume_cnt;
+
+	switch(volume_div)
+	{
+		case 0x00: volume_cnt = apu_stat.channel[id].volume; break;
+		case 0x01: volume_cnt = (apu_stat.channel[id].volume / 2); break;
+		case 0x02: volume_cnt = (apu_stat.channel[id].volume / 4); break;
+		case 0x03: volume_cnt = (apu_stat.channel[id].volume / 16); break;
+	}
+
+	float vol = (volume_cnt != 0) ? (volume_cnt / 127.0) : 0;
 	vol *= (apu_stat.main_volume / 127.0);
 	vol *= (config::volume / 128.0);
 
@@ -221,10 +275,11 @@ void NTR_APU::generate_channel_samples(s32* stream, int length, u8 id)
 	u32 adpcm_pos = 0;
 	u32 segment_pos = 0;
 	s32 output_sample = 0;
+	u32 sample_index = 0;
 
 	for(u32 x = 0; x < length;)
 	{
-		segment_pos = (config::use_stereo) ? (x/2) : x;
+		segment_pos = (config::use_stereo) ? (sample_index/2) : sample_index;
 
 		//Channel 0 should set default data
 		if(id == 0) { output_sample = 0; }
@@ -247,6 +302,8 @@ void NTR_APU::generate_channel_samples(s32* stream, int length, u8 id)
 					if(loop_mode == 1)
 					{
 						apu_stat.channel[id].data_pos = apu_stat.channel[id].play_src + (apu_stat.channel[id].loop_start * 4);
+						sample_pos = apu_stat.channel[id].data_pos;
+						sample_index = 0;
 					}
 					
 					//Stop sound
@@ -273,6 +330,8 @@ void NTR_APU::generate_channel_samples(s32* stream, int length, u8 id)
 					if(loop_mode == 1)
 					{
 						apu_stat.channel[id].data_pos = apu_stat.channel[id].play_src + (apu_stat.channel[id].loop_start * 4);
+						sample_pos = apu_stat.channel[id].data_pos;
+						sample_index = 0;
 					}
 					
 					//Stop sound
@@ -300,6 +359,7 @@ void NTR_APU::generate_channel_samples(s32* stream, int length, u8 id)
 					{
 						apu_stat.channel[id].adpcm_pos = (apu_stat.channel[id].loop_start * 8);
 						apu_stat.channel[id].samples = ((apu_stat.channel[id].length - 1) * 8);
+						sample_index = 0;
 					}
 
 					//Stop sound
@@ -327,12 +387,14 @@ void NTR_APU::generate_channel_samples(s32* stream, int length, u8 id)
 			stream[x] += (output_sample * pan_left);
 			stream[x + 1] += (output_sample * pan_right);
 			x += 2;
+			sample_index += 2;
 		}
 
 		else
 		{
 			stream[x] += output_sample;
 			x += 1;
+			sample_index += 1;
 		}
 	}
 
@@ -493,4 +555,160 @@ void ntr_microphone_callback(void* _apu, u8 *_stream, int _length)
 			SDL_PauseAudioDevice(apu_link->apu_stat.mic.id, 1);
 		}
 	}
+}
+
+/****** Read APU data from save state ******/
+bool NTR_APU::apu_read(u32 offset, std::string filename)
+{
+	std::ifstream file(filename.c_str(), std::ios::binary);
+	
+	if(!file.is_open()) { return false; }
+
+	//Go to offset
+	file.seekg(offset);
+
+	//Serialize APU data from save state
+	for(u32 x = 0; x < 16; x++)
+	{
+		file.read((char*)&apu_stat.channel[x].output_frequency, sizeof(apu_stat.channel[x].output_frequency));
+		file.read((char*)&apu_stat.channel[x].play_src, sizeof(apu_stat.channel[x].play_src));
+		file.read((char*)&apu_stat.channel[x].data_src, sizeof(apu_stat.channel[x].data_src));
+		file.read((char*)&apu_stat.channel[x].data_pos, sizeof(apu_stat.channel[x].data_pos));
+		file.read((char*)&apu_stat.channel[x].loop_start, sizeof(apu_stat.channel[x].loop_start));
+		file.read((char*)&apu_stat.channel[x].length, sizeof(apu_stat.channel[x].length));
+		file.read((char*)&apu_stat.channel[x].samples, sizeof(apu_stat.channel[x].samples));
+		file.read((char*)&apu_stat.channel[x].cnt, sizeof(apu_stat.channel[x].cnt));
+		file.read((char*)&apu_stat.channel[x].timer, sizeof(apu_stat.channel[x].timer));
+		file.read((char*)&apu_stat.channel[x].volume, sizeof(apu_stat.channel[x].volume));
+		file.read((char*)&apu_stat.channel[x].pan, sizeof(apu_stat.channel[x].pan));
+		file.read((char*)&apu_stat.channel[x].format, sizeof(apu_stat.channel[x].format));
+		file.read((char*)&apu_stat.channel[x].playing, sizeof(apu_stat.channel[x].playing));
+		file.read((char*)&apu_stat.channel[x].enable, sizeof(apu_stat.channel[x].enable));
+		file.read((char*)&apu_stat.channel[x].adpcm_header, sizeof(apu_stat.channel[x].adpcm_header));
+		file.read((char*)&apu_stat.channel[x].adpcm_pos, sizeof(apu_stat.channel[x].adpcm_pos));
+		file.read((char*)&apu_stat.channel[x].adpcm_index, sizeof(apu_stat.channel[x].adpcm_index));
+		file.read((char*)&apu_stat.channel[x].adpcm_val, sizeof(apu_stat.channel[x].adpcm_val));
+		file.read((char*)&apu_stat.channel[x].decode_adpcm, sizeof(apu_stat.channel[x].decode_adpcm));
+
+		u32 buffer_size = 0;
+		file.read((char*)&buffer_size, sizeof(buffer_size));
+		apu_stat.channel[x].adpcm_buffer.clear();
+
+		for(u32 y = 0; y < buffer_size; y++)
+		{
+			s16 temp_sample;
+			file.read((char*)&temp_sample, sizeof(temp_sample));
+			apu_stat.channel[x].adpcm_buffer.push_back(temp_sample);
+		}
+	}
+
+	file.read((char*)&apu_stat.adpcm_table, sizeof(apu_stat.adpcm_table));
+	file.read((char*)&apu_stat.index_table, sizeof(apu_stat.index_table));
+	file.read((char*)&apu_stat.sound_on, sizeof(apu_stat.sound_on));
+	file.read((char*)&apu_stat.stereo, sizeof(apu_stat.stereo));
+	file.read((char*)&apu_stat.main_volume, sizeof(apu_stat.main_volume));
+	file.read((char*)&apu_stat.sample_rate, sizeof(apu_stat.sample_rate));
+	file.read((char*)&apu_stat.channel_master_volume, sizeof(apu_stat.channel_master_volume));
+
+	file.close();
+	return true;
+}
+
+/****** Write APU data to save state ******/
+bool NTR_APU::apu_write(std::string filename)
+{
+	std::ofstream file(filename.c_str(), std::ios::binary | std::ios::app);
+	
+	if(!file.is_open()) { return false; }
+
+	//Serialize APU data to save state
+	for(u32 x = 0; x < 16; x++)
+	{
+		file.write((char*)&apu_stat.channel[x].output_frequency, sizeof(apu_stat.channel[x].output_frequency));
+		file.write((char*)&apu_stat.channel[x].play_src, sizeof(apu_stat.channel[x].play_src));
+		file.write((char*)&apu_stat.channel[x].data_src, sizeof(apu_stat.channel[x].data_src));
+		file.write((char*)&apu_stat.channel[x].data_pos, sizeof(apu_stat.channel[x].data_pos));
+		file.write((char*)&apu_stat.channel[x].loop_start, sizeof(apu_stat.channel[x].loop_start));
+		file.write((char*)&apu_stat.channel[x].length, sizeof(apu_stat.channel[x].length));
+		file.write((char*)&apu_stat.channel[x].samples, sizeof(apu_stat.channel[x].samples));
+		file.write((char*)&apu_stat.channel[x].cnt, sizeof(apu_stat.channel[x].cnt));
+		file.write((char*)&apu_stat.channel[x].timer, sizeof(apu_stat.channel[x].timer));
+		file.write((char*)&apu_stat.channel[x].volume, sizeof(apu_stat.channel[x].volume));
+		file.write((char*)&apu_stat.channel[x].pan, sizeof(apu_stat.channel[x].pan));
+		file.write((char*)&apu_stat.channel[x].format, sizeof(apu_stat.channel[x].format));
+		file.write((char*)&apu_stat.channel[x].playing, sizeof(apu_stat.channel[x].playing));
+		file.write((char*)&apu_stat.channel[x].enable, sizeof(apu_stat.channel[x].enable));
+		file.write((char*)&apu_stat.channel[x].adpcm_header, sizeof(apu_stat.channel[x].adpcm_header));
+		file.write((char*)&apu_stat.channel[x].adpcm_pos, sizeof(apu_stat.channel[x].adpcm_pos));
+		file.write((char*)&apu_stat.channel[x].adpcm_index, sizeof(apu_stat.channel[x].adpcm_index));
+		file.write((char*)&apu_stat.channel[x].adpcm_val, sizeof(apu_stat.channel[x].adpcm_val));
+		file.write((char*)&apu_stat.channel[x].decode_adpcm, sizeof(apu_stat.channel[x].decode_adpcm));
+
+		u32 buffer_size = apu_stat.channel[x].adpcm_buffer.size();
+		file.write((char*)&buffer_size, sizeof(buffer_size));
+
+		for(u32 y = 0; y < buffer_size; y++)
+		{
+			s16 temp_sample = apu_stat.channel[x].adpcm_buffer[y];
+			file.write((char*)&temp_sample, sizeof(temp_sample));
+		}
+	}
+
+	file.write((char*)&apu_stat.adpcm_table, sizeof(apu_stat.adpcm_table));
+	file.write((char*)&apu_stat.index_table, sizeof(apu_stat.index_table));
+	file.write((char*)&apu_stat.sound_on, sizeof(apu_stat.sound_on));
+	file.write((char*)&apu_stat.stereo, sizeof(apu_stat.stereo));
+	file.write((char*)&apu_stat.main_volume, sizeof(apu_stat.main_volume));
+	file.write((char*)&apu_stat.sample_rate, sizeof(apu_stat.sample_rate));
+	file.write((char*)&apu_stat.channel_master_volume, sizeof(apu_stat.channel_master_volume));
+
+	file.close();
+	return true;
+}
+
+/****** Gets the size of APU data for serialization ******/
+u32 NTR_APU::size()
+{
+	u32 apu_size = 0;
+
+	for(u32 x = 0; x < 16; x++)
+	{
+		apu_size += sizeof(apu_stat.channel[x].output_frequency);
+		apu_size += sizeof(apu_stat.channel[x].play_src);
+		apu_size += sizeof(apu_stat.channel[x].data_src);
+		apu_size += sizeof(apu_stat.channel[x].data_pos);
+		apu_size += sizeof(apu_stat.channel[x].loop_start);
+		apu_size += sizeof(apu_stat.channel[x].length);
+		apu_size += sizeof(apu_stat.channel[x].samples);
+		apu_size += sizeof(apu_stat.channel[x].cnt);
+		apu_size += sizeof(apu_stat.channel[x].timer);
+		apu_size += sizeof(apu_stat.channel[x].volume);
+		apu_size += sizeof(apu_stat.channel[x].pan);
+		apu_size += sizeof(apu_stat.channel[x].format);
+		apu_size += sizeof(apu_stat.channel[x].playing);
+		apu_size += sizeof(apu_stat.channel[x].enable);
+		apu_size += sizeof(apu_stat.channel[x].adpcm_header);
+		apu_size += sizeof(apu_stat.channel[x].adpcm_pos);
+		apu_size += sizeof(apu_stat.channel[x].adpcm_index);
+		apu_size += sizeof(apu_stat.channel[x].adpcm_val);
+		apu_size += sizeof(apu_stat.channel[x].decode_adpcm);
+
+		u32 buffer_size = apu_stat.channel[x].adpcm_buffer.size();
+		apu_size += sizeof(buffer_size);
+
+		for(u32 y = 0; y < buffer_size; y++)
+		{
+			apu_size += sizeof(apu_stat.channel[x].adpcm_buffer[y]);
+		}
+	}
+
+	apu_size += sizeof(apu_stat.adpcm_table);
+	apu_size += sizeof(apu_stat.index_table);
+	apu_size += sizeof(apu_stat.sound_on);
+	apu_size += sizeof(apu_stat.stereo);
+	apu_size += sizeof(apu_stat.main_volume);
+	apu_size += sizeof(apu_stat.sample_rate);
+	apu_size += sizeof(apu_stat.channel_master_volume);
+
+	return apu_size;
 }

@@ -38,7 +38,13 @@ class NTR_APU
 	void decode_adpcm_samples(u8 id);
 
 	bool init();
+	bool soft_init();
 	void reset();
+
+	//Serialize data for save state loading/saving
+	bool apu_read(u32 offset, std::string filename);
+	bool apu_write(std::string filename);
+	u32 size();
 };
 
 /****** SDL Audio Callback ******/ 

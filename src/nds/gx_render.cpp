@@ -413,7 +413,7 @@ void NTR_LCD::fill_poly_solid()
 	u8 edge_x1 = lcd_3D_stat.poly_min_x;
 	u8 edge_x2 = lcd_3D_stat.poly_max_x - 1;
 
-	for(u32 x = lcd_3D_stat.poly_min_x; x < lcd_3D_stat.poly_max_x; x++)
+	for(u32 x = lcd_3D_stat.poly_min_x; x <= lcd_3D_stat.poly_max_x; x++)
 	{
 		float z_start = 0.0;
 		float z_end = 0.0;
@@ -476,7 +476,7 @@ void NTR_LCD::fill_poly_interpolated()
 	bool use_edge = lcd_3D_stat.edge_marking;
 	u32 edge_color = lcd_3D_stat.edge_color[lcd_3D_stat.poly_id >> 3];
 
-	for(u32 x = lcd_3D_stat.poly_min_x; x < lcd_3D_stat.poly_max_x; x++)
+	for(u32 x = lcd_3D_stat.poly_min_x; x <= lcd_3D_stat.poly_max_x; x++)
 	{
 		float z_start = 0.0;
 		float z_end = 0.0;
@@ -578,7 +578,7 @@ void NTR_LCD::fill_poly_textured()
 	u32 tw = lcd_3D_stat.tex_src_width;
 	u32 th = lcd_3D_stat.tex_src_height;
 
-	for(u32 x = lcd_3D_stat.poly_min_x; x < lcd_3D_stat.poly_max_x; x++)
+	for(u32 x = lcd_3D_stat.poly_min_x; x <= lcd_3D_stat.poly_max_x; x++)
 	{
 		float z_start = 0.0;
 		float z_end = 0.0;
@@ -630,41 +630,57 @@ void NTR_LCD::fill_poly_textured()
 			//Wrap horizontally, if necessary
 			if(lcd_3D_stat.repeat_tex_x)
 			{
-				u8 x_flip = u32(std::abs(tx1 / tw)) & 0x1;
+				bool x_flip = u32(std::abs(tx1 / tw)) & 0x1;
+				if(tx1 < 0) { x_flip = !x_flip; }
 
 				//No flipping horizontally
 				if(!lcd_3D_stat.flip_tex_x || !x_flip)
 				{
-					if(tx1 < 0) { real_tx = (tx1 + (tw * (std::abs(s32(tx1 / tw)) + 1))); }
+					if(tx1 < 0) { real_tx = (tw * std::abs(s32(tx1 / tw))) + tx1 + (tw - 1); }
 					else if(tx1 >= tw) { real_tx = (tx1 - (tw * (s32(tx1 / tw)))); }
 				}
 
 				//Flip horizontally
 				else
 				{
-					if(tx1 < 0) { real_tx = tw - (tx1 + (tw * (std::abs(s32(tx1 / tw)) + 1))); }
-					else if(tx1 >= tw) { real_tx = tw - (tx1 - (tw * (s32(tx1 / tw)))); }
+					if(tx1 < 0) { real_tx = std::abs(tx1) - (tw * std::abs(s32(tx1 / tw))); }
+					else if(tx1 >= tw) { real_tx = (tw - (tx1 - (tw * s32(tx1 / tw)))) - 1; }
 				}
+			}
+
+			//Otherwise clamp X coordinate if out of bounds
+			else
+			{
+				if(tx1 < 0) { real_tx = 0; }
+				else if(tx1 >= tw) { real_tx = tw - 1; }
 			}
 
 			//Wrap vertically, if necessary
 			if(lcd_3D_stat.repeat_tex_y)
 			{
 				u8 y_flip = u32(std::abs(ty1 / th)) & 0x1;
+				if(ty1 < 0) { y_flip = !y_flip; }
 
 				//No flipping vertically
 				if(!lcd_3D_stat.flip_tex_y || !y_flip)
 				{
-					if(ty1 < 0) { real_ty = (ty1 + (th * (std::abs(s32(ty1 / th)) + 1))); }
+					if(ty1 < 0) { real_ty = (th * std::abs(s32(ty1 / th))) + ty1 + (th - 1); }
 					else if(ty1 >= th) { real_ty = (ty1 - (th * s32(ty1 / th))); }
 				}
 
 				//Flip vertically
 				else
 				{
-					if(ty1 < 0) { real_ty = th - (ty1 + (th * (std::abs(s32(ty1 / th)) + 1))); }
-					else if(ty1 >= th) { real_ty = th - (ty1 - (th * s32(ty1 / th))); }
+					if(ty1 < 0) { real_ty = std::abs(ty1) - (th * std::abs(s32(ty1 / th))); }
+					else if(ty1 >= th) { real_ty = (th - (ty1 - (th * s32(ty1 / th)))) - 1; }
 				}
+			}
+
+			//Otherwise clamp Y coordinate if out of bounds
+			else
+			{
+				if(ty1 < 0) { real_ty = 0; }
+				else if(ty1 >= tw) { real_ty = th - 1; }
 			}
 
 			//Convert plot points to buffer index
@@ -1260,7 +1276,8 @@ void NTR_LCD::process_gx_command()
 				else { result = (tx >> 4); }
 				if((tx & 0xF) != 0) { result += (tx & 0xF) / 16.0; }
 
-				lcd_3D_stat.tex_coord_x[lcd_3D_stat.vertex_list_index] = result;
+				//lcd_3D_stat.tex_coord_x[lcd_3D_stat.vertex_list_index] = result;
+				lcd_3D_stat.last_tx = result;
 
 				//Texture Y
 				u16 ty = read_param_u16(0);
@@ -1275,14 +1292,15 @@ void NTR_LCD::process_gx_command()
 				else { result = (ty >> 4); }
 				if((ty & 0xF) != 0) { result += (ty & 0xF) / 16.0; }
 
-				lcd_3D_stat.tex_coord_y[lcd_3D_stat.vertex_list_index] = result;
+				//lcd_3D_stat.tex_coord_y[lcd_3D_stat.vertex_list_index] = result;
+				lcd_3D_stat.last_ty = result;
 
 				//Transform TX and TY by texture matrix
 				if(lcd_3D_stat.tex_transformation == 0x1)
 				{
 					gx_matrix tm_src(4, 1);
-					tm_src[0] = lcd_3D_stat.tex_coord_x[lcd_3D_stat.vertex_list_index];
-					tm_src[1] = lcd_3D_stat.tex_coord_y[lcd_3D_stat.vertex_list_index];
+					tm_src[0] = lcd_3D_stat.last_tx;
+					tm_src[1] = lcd_3D_stat.last_ty;
 					tm_src[2] = 0.0625;
 					tm_src[3] = 0.0625;
 
@@ -1300,8 +1318,8 @@ void NTR_LCD::process_gx_command()
 					tm_global.data[13] = gx_texture_matrix.data[13];
 
 					tm_src = tm_src * tm_global;
-					lcd_3D_stat.tex_coord_x[lcd_3D_stat.vertex_list_index] = tm_src[0];
-					lcd_3D_stat.tex_coord_y[lcd_3D_stat.vertex_list_index] = tm_src[1];
+					lcd_3D_stat.last_tx = tm_src[0];
+					lcd_3D_stat.last_ty = tm_src[1];
 				}
 
 				//Set texture status
@@ -1357,6 +1375,8 @@ void NTR_LCD::process_gx_command()
 
 				//Set vertex color
 				vert_colors[lcd_3D_stat.vertex_list_index] = lcd_3D_stat.vertex_color;
+				lcd_3D_stat.tex_coord_x[lcd_3D_stat.vertex_list_index] = lcd_3D_stat.last_tx;
+				lcd_3D_stat.tex_coord_y[lcd_3D_stat.vertex_list_index] = lcd_3D_stat.last_ty;
 
 				lcd_3D_stat.vertex_list_index++;
 
@@ -1422,6 +1442,8 @@ void NTR_LCD::process_gx_command()
 
 				//Set vertex color
 				vert_colors[lcd_3D_stat.vertex_list_index] = lcd_3D_stat.vertex_color;
+				lcd_3D_stat.tex_coord_x[lcd_3D_stat.vertex_list_index] = lcd_3D_stat.last_tx;
+				lcd_3D_stat.tex_coord_y[lcd_3D_stat.vertex_list_index] = lcd_3D_stat.last_ty;
 
 				lcd_3D_stat.vertex_list_index++;
 
@@ -1517,6 +1539,8 @@ void NTR_LCD::process_gx_command()
 
 				//Set vertex color
 				vert_colors[lcd_3D_stat.vertex_list_index] = lcd_3D_stat.vertex_color;
+				lcd_3D_stat.tex_coord_x[lcd_3D_stat.vertex_list_index] = lcd_3D_stat.last_tx;
+				lcd_3D_stat.tex_coord_y[lcd_3D_stat.vertex_list_index] = lcd_3D_stat.last_ty;
 
 				lcd_3D_stat.vertex_list_index++;
 
@@ -1581,6 +1605,8 @@ void NTR_LCD::process_gx_command()
 
 				//Set vertex color
 				vert_colors[lcd_3D_stat.vertex_list_index] = lcd_3D_stat.vertex_color;
+				lcd_3D_stat.tex_coord_x[lcd_3D_stat.vertex_list_index] = lcd_3D_stat.last_tx;
+				lcd_3D_stat.tex_coord_y[lcd_3D_stat.vertex_list_index] = lcd_3D_stat.last_ty;
 
 				lcd_3D_stat.vertex_list_index++;
 
